@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:dartboy/emulator/emulator.dart';
+import 'package:dartboy/gui/button.dart';
 import 'package:dartboy/gui/lcd.dart';
 import 'package:dartboy/gui/modal.dart';
 import 'package:file_picker/file_picker.dart';
@@ -53,7 +54,10 @@ class MainScreenState extends State<MainScreen> {
     hudUpdateTimer?.cancel();
   }
 
-  Future<void> loadFile() async {
+  Future<void> _debugFile() async {
+    // Reset the emulator first
+    _resetEmulator();
+
     // Load from assets
     ByteData romData = await rootBundle.load('assets/roms/cpu_instrs.gb');
     Uint8List romBytes = romData.buffer.asUint8List();
@@ -63,12 +67,12 @@ class MainScreenState extends State<MainScreen> {
     MainScreen.emulator.loadROM(romBytes);
     MainScreen.emulator.state = EmulatorState.ready;
 
-    _runEmulator();
+    _startEmulator();
 
     setState(() {}); // Trigger UI rebuild after loading ROM
   }
 
-  Future<void> pickFile() async {
+  Future<void> _loadFile() async {
     // Load from file picker
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       dialogTitle: 'Choose ROM',
@@ -78,8 +82,8 @@ class MainScreenState extends State<MainScreen> {
     if (!mounted) return;
 
     if (result != null && result.files.single.bytes != null) {
+      _resetEmulator();
       MainScreen.emulator.loadROM(result.files.single.bytes!);
-      setState(() {}); // Trigger UI rebuild after loading ROM
     } else {
       Modal.alert(
         context,
@@ -88,6 +92,12 @@ class MainScreenState extends State<MainScreen> {
         onCancel: () => {},
       );
     }
+  }
+
+  void _startEmulator() {
+    MainScreen.emulator.run();
+    _startHudUpdateTimer(); // Start the HUD refresh timer
+    setState(() {}); // Trigger UI rebuild after loading ROM
   }
 
   void _runEmulator() {
@@ -156,8 +166,9 @@ class MainScreenState extends State<MainScreen> {
           Expanded(
             flex: 2,
             child: Container(
-              padding:
-                  const EdgeInsets.all(8.0), // Add padding inside the border
+              padding: const EdgeInsets.all(
+                8.0,
+              ), // Add padding inside the border
               decoration: BoxDecoration(
                 border: Border.all(
                   color: Colors.white,
@@ -174,11 +185,9 @@ class MainScreenState extends State<MainScreen> {
                       fontSize: 18,
                     ),
                   ),
-
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 4.0),
                   ),
-
                   // Emulator controls (Load, Pause, Run, Reset)
                   SizedBox(
                     width: double.infinity,
@@ -190,53 +199,46 @@ class MainScreenState extends State<MainScreen> {
                           color: Colors.white,
                         ), // Set border color and thickness
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: ElevatedButton(
-                              onPressed: loadFile,
-                              child: const Text('Debug'),
-                            ),
+                          customButton(
+                            label: 'Debug',
+                            onPressed: () {
+                              _debugFile();
+                            },
                           ),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: ElevatedButton(
-                              onPressed: pickFile,
-                              child: const Text('Load'),
-                            ),
+                          customButton(
+                            label: 'Load',
+                            onPressed: () {
+                              _loadFile();
+                            },
                           ),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: ElevatedButton(
-                              onPressed: _runEmulator,
-                              child: const Text('Run'),
-                            ),
+                          customButton(
+                            label: 'Run',
+                            onPressed: () {
+                              _runEmulator();
+                            },
                           ),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: ElevatedButton(
-                              onPressed: _pauseEmulator,
-                              child: const Text('Pause'),
-                            ),
+                          customButton(
+                            label: 'Pause',
+                            onPressed: () {
+                              _pauseEmulator();
+                            },
                           ),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: ElevatedButton(
-                              onPressed: _resetEmulator,
-                              child: const Text('Reset'),
-                            ),
+                          customButton(
+                            label: 'Reset',
+                            onPressed: () {
+                              _resetEmulator();
+                            },
                           ),
                         ],
                       ),
                     ),
                   ),
-
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 4.0),
                   ),
-
                   // Debug information (FPS, cycles, speed, registers)
                   Expanded(
                     flex: 1,
