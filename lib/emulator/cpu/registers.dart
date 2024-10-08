@@ -37,6 +37,12 @@ class Registers {
   // F is the flag register.
   List<int> registers = List<int>.filled(8, 0);
 
+  // Flag accessors (Z, N, H, C)
+  bool get zeroFlagSet => (f & zeroFlag) != 0;
+  bool get subtractFlagSet => (f & subtractFlag) != 0;
+  bool get halfCarryFlagSet => (f & halfCarryFlag) != 0;
+  bool get carryFlagSet => (f & carryFlag) != 0;
+
   int get a {
     return registers[A];
   }

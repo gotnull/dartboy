@@ -26,6 +26,10 @@ class Emulator {
   /// CPU object
   CPU? cpu;
 
+  int cycles = 0;
+  int speed = 0;
+  int fps = 0;
+
   /// Press a gamepad button down (update memory register).
   void buttonDown(int button) {
     cpu?.buttons[button] = true;
@@ -81,7 +85,7 @@ class Emulator {
     Configuration.debugInstructions = wasDebug;
   }
 
-  /// Run the emulation all full speed.
+  /// Run the emulation at full speed.
   void run() {
     if (state != EmulatorState.ready) {
       print('Emulator not ready, cannot run.');
@@ -90,33 +94,50 @@ class Emulator {
 
     state = EmulatorState.running;
 
-    int frequency = CPU.frequency ~/ 4;
-    double periodCPU = 1e6 / frequency;
+    int frequency = CPU.frequency;
+    double periodCPU = 1e6 / frequency; // Time per CPU cycle in microseconds
 
-    int fps = 30;
-    double periodFPS = 1e6 / fps;
+    // FPS target
+    fps = 60; // Standard for most emulators
+    double periodFPS = 1e6 / fps; // Time per frame in microseconds
 
-    int cycles = periodFPS ~/ periodCPU;
     Duration period = Duration(microseconds: periodFPS.toInt());
 
+    // Track cycles
+    cycles = 0;
+    int frameCycles = frequency ~/ fps; // Cycles per frame for 60fps
+    int frameCounter = 0;
+
+    // Use a stopwatch to measure actual FPS
+    Stopwatch stopwatch = Stopwatch()..start();
+
     loop() async {
-      while (true) {
-        if (state != EmulatorState.running) {
-          print('Stopped emulation.');
-          return;
+      while (state == EmulatorState.running) {
+        int cyclesThisFrame = 0;
+
+        // Execute CPU steps for one frame
+        while (cyclesThisFrame < frameCycles) {
+          cpu?.step();
+          cyclesThisFrame +=
+              4; // Assuming each step takes 4 cycles (adjust as needed)
         }
 
-        try {
-          for (var i = 0; i < cycles; i++) {
-            cpu?.step();
-          }
-        } catch (e, stacktrace) {
-          print('Error occured, emulation stoped.');
-          print(e.toString());
-          print(stacktrace.toString());
-          return;
+        cycles += cyclesThisFrame; // Update total cycles
+
+        // Calculate speed and FPS
+        frameCounter++;
+        if (frameCounter >= fps) {
+          frameCounter = 0;
+
+          // Time elapsed for one second
+          double elapsedSeconds = stopwatch.elapsedMicroseconds / 1e6;
+          speed = (cycles / elapsedSeconds).toInt(); // CPU speed in Hz
+          fps = (1 / elapsedSeconds).toInt(); // Actual frames per second
+
+          stopwatch.reset(); // Reset stopwatch for the next second
         }
 
+        // Wait for the next frame
         await Future.delayed(period);
       }
     }

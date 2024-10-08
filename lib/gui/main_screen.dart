@@ -1,11 +1,9 @@
-import 'package:dartboy/emulator/configuration.dart';
+import 'dart:async';
 import 'package:dartboy/emulator/emulator.dart';
 import 'package:dartboy/emulator/memory/gamepad.dart';
-import 'package:dartboy/gui/button.dart';
 import 'package:dartboy/gui/lcd.dart';
 import 'package:dartboy/gui/modal.dart';
 import 'package:file_picker/file_picker.dart';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -20,334 +18,327 @@ class MainScreen extends StatefulWidget {
   static LCDState lcdState = LCDState();
 
   static bool keyboardHandlerCreated = false;
+
   @override
-  MainScreenState createState() {
-    return MainScreenState();
-  }
+  MainScreenState createState() => MainScreenState();
 }
 
 class MainScreenState extends State<MainScreen> {
-  static const int keyI = 73;
-  static const int keyO = 79;
-  static const int keyP = 80;
+  Timer? hudUpdateTimer; // Timer to periodically update the HUD
 
-  static Map<int, int> keyMapping = {
-    // Left arrow
-    263: Gamepad.left,
-    // Right arrow
-    262: Gamepad.right,
-    // Up arrow
-    265: Gamepad.up,
-    // Down arrow
-    264: Gamepad.down,
-    // Z
-    90: Gamepad.A,
-    // X
-    88: Gamepad.B,
-    // Enter
-    257: Gamepad.start,
-    // C
-    67: Gamepad.select
-  };
+  @override
+  void initState() {
+    super.initState();
+    _startHudUpdateTimer();
+  }
+
+  @override
+  void dispose() {
+    _stopHudUpdateTimer();
+    super.dispose();
+  }
+
+  /// Start a Timer to refresh the HUD every 500ms
+  void _startHudUpdateTimer() {
+    hudUpdateTimer = Timer.periodic(const Duration(milliseconds: 4), (timer) {
+      if (mounted) {
+        setState(() {
+          // Trigger rebuild to update the HUD
+        });
+      }
+    });
+  }
+
+  /// Stop the Timer when the emulator is paused or reset
+  void _stopHudUpdateTimer() {
+    hudUpdateTimer?.cancel();
+  }
+
+  Future<void> loadFile() async {
+    // Load from assets
+    ByteData romData = await rootBundle.load('assets/roms/cpu_instrs.gb');
+    Uint8List romBytes = romData.buffer.asUint8List();
+
+    if (!mounted) return;
+
+    MainScreen.emulator.loadROM(romBytes);
+    MainScreen.emulator.state = EmulatorState.ready;
+
+    _runEmulator();
+
+    setState(() {}); // Trigger UI rebuild after loading ROM
+  }
 
   Future<void> pickFile() async {
+    // Load from file picker
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       dialogTitle: 'Choose ROM',
-      withData: true, // This ensures that the file bytes are loaded into memory
+      withData: true,
     );
 
-    if (!mounted) {
-      return; // Ensure that the widget is still mounted before using the context
-    }
+    if (!mounted) return;
 
     if (result != null && result.files.single.bytes != null) {
       MainScreen.emulator.loadROM(result.files.single.bytes!);
+      setState(() {}); // Trigger UI rebuild after loading ROM
     } else {
-      // Ensure the widget is still mounted before calling context
-      Modal.alert(context, 'Error', 'No valid ROM file selected.',
-          onCancel: () => {});
+      Modal.alert(
+        context,
+        'Error',
+        'No valid ROM file selected.',
+        onCancel: () => {},
+      );
     }
+  }
+
+  void _runEmulator() {
+    if (MainScreen.emulator.state != EmulatorState.ready) {
+      Modal.alert(
+        context,
+        'Error',
+        'Not ready to run. Load ROM first.',
+        onCancel: () {},
+      );
+      return;
+    }
+    MainScreen.emulator.run();
+    _startHudUpdateTimer(); // Start the HUD refresh timer
+    setState(() {}); // Trigger UI rebuild after running
+  }
+
+  void _pauseEmulator() {
+    if (MainScreen.emulator.state != EmulatorState.running) {
+      Modal.alert(
+        context,
+        'Error',
+        "Not running, can't be paused.",
+        onCancel: () {},
+      );
+      return;
+    }
+    MainScreen.emulator.pause();
+    _stopHudUpdateTimer(); // Stop the HUD refresh timer when paused
+    setState(() {}); // Trigger UI rebuild after pausing
+  }
+
+  void _resetEmulator() {
+    MainScreen.emulator.reset();
+    _stopHudUpdateTimer(); // Stop the HUD refresh timer when reset
+    setState(() {}); // Trigger UI rebuild after reset
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!MainScreen.keyboardHandlerCreated) {
-      MainScreen.keyboardHandlerCreated = true;
-
-      HardwareKeyboard.instance.addHandler((KeyEvent key) {
-        int keyCode = key.logicalKey.keyId;
-
-        // Debug functions
-        if (MainScreen.emulator.state == EmulatorState.running) {
-          if (key is KeyDownEvent) {
-            if (keyCode == keyI) {
-              print('Toggle background layer.');
-              Configuration.drawBackgroundLayer =
-                  !Configuration.drawBackgroundLayer;
-              return true; // Event handled
-            } else if (keyCode == keyO) {
-              print('Toggle sprite layer.');
-              Configuration.drawSpriteLayer = !Configuration.drawSpriteLayer;
-              return true; // Event handled
-            }
-          }
-        }
-
-        // If the key is not found in keyMapping, return false.
-        if (!keyMapping.containsKey(keyCode)) {
-          return false; // Key not handled
-        }
-
-        if (key is KeyUpEvent) {
-          MainScreen.emulator.buttonUp(keyMapping[keyCode]!);
-          return true; // Event handled
-        } else if (key is KeyDownEvent) {
-          MainScreen.emulator.buttonDown(keyMapping[keyCode]!);
-          return true; // Event handled
-        }
-
-        return false; // Default return value for unhandled events
-      });
-    }
+    final cpu = MainScreen.emulator.cpu;
+    final registers = cpu?.registers;
 
     return Scaffold(
-        backgroundColor: Colors.black,
-        body: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: <Widget>[
-              // LCD
-              const Expanded(child: LCDWidget(key: Key('lcd'))),
-              Expanded(
-                  child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: <Widget>[
-                    // Buttons (DPAD + AB)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: <Widget>[
-                        // DPAD
-                        Column(
-                          children: <Widget>[
-                            Button(
-                                color: Colors.blueAccent,
-                                onPressed: () {
-                                  MainScreen.emulator.buttonDown(Gamepad.up);
-                                },
-                                onReleased: () {
-                                  MainScreen.emulator.buttonUp(Gamepad.up);
-                                },
-                                label: "Up",
-                                key: const Key('up')),
-                            Row(children: <Widget>[
-                              Button(
-                                  color: Colors.blueAccent,
-                                  onPressed: () {
-                                    MainScreen.emulator
-                                        .buttonDown(Gamepad.left);
-                                  },
-                                  onReleased: () {
-                                    MainScreen.emulator.buttonUp(Gamepad.left);
-                                  },
-                                  label: "Left",
-                                  key: const Key('left')),
-                              const SizedBox(width: 50, height: 50),
-                              Button(
-                                  color: Colors.blueAccent,
-                                  onPressed: () {
-                                    MainScreen.emulator
-                                        .buttonDown(Gamepad.right);
-                                  },
-                                  onReleased: () {
-                                    MainScreen.emulator.buttonUp(Gamepad.right);
-                                  },
-                                  label: "Right",
-                                  key: const Key('right'))
-                            ]),
-                            Button(
-                                color: Colors.blueAccent,
-                                onPressed: () {
-                                  MainScreen.emulator.buttonDown(Gamepad.down);
-                                },
-                                onReleased: () {
-                                  MainScreen.emulator.buttonUp(Gamepad.down);
-                                },
-                                label: "Down",
-                                key: const Key('down')),
-                          ],
-                        ),
-                        // AB
-                        Column(
-                          children: <Widget>[
-                            Button(
-                                color: Colors.red,
-                                onPressed: () {
-                                  MainScreen.emulator.buttonDown(Gamepad.A);
-                                },
-                                onReleased: () {
-                                  MainScreen.emulator.buttonUp(Gamepad.A);
-                                },
-                                label: "A",
-                                key: const Key('a')),
-                            Button(
-                                color: Colors.green,
-                                onPressed: () {
-                                  MainScreen.emulator.buttonDown(Gamepad.B);
-                                },
-                                onReleased: () {
-                                  MainScreen.emulator.buttonUp(Gamepad.B);
-                                },
-                                label: "B",
-                                key: const Key('b')),
-                          ],
-                        ),
-                      ],
-                    ),
-                    // Button (SELECT + START)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: <Widget>[
-                        Button(
-                            color: Colors.orange,
-                            onPressed: () {
-                              MainScreen.emulator.buttonDown(Gamepad.start);
-                            },
-                            onReleased: () {
-                              MainScreen.emulator.buttonUp(Gamepad.start);
-                            },
-                            labelColor: Colors.black,
-                            label: "Start",
-                            key: const Key('start')),
-                        Container(width: 20),
-                        Button(
-                            color: Colors.yellowAccent,
-                            onPressed: () {
-                              MainScreen.emulator.buttonDown(Gamepad.select);
-                            },
-                            onReleased: () {
-                              MainScreen.emulator.buttonUp(Gamepad.select);
-                            },
-                            labelColor: Colors.black,
-                            label: "Select",
-                            key: const Key('select')),
-                      ],
-                    ),
-                    // Button (Start + Pause + Load)
-                    Expanded(
-                        child: ListView(
-                      padding: const EdgeInsets.only(left: 10.0, right: 10.0),
-                      scrollDirection: Axis.horizontal,
-                      children: <Widget>[
-                        ElevatedButton(
-                            onPressed: () {
-                              if (MainScreen.emulator.state !=
-                                  EmulatorState.ready) {
-                                Modal.alert(
-                                  context,
-                                  'Error',
-                                  'Not ready to run. Load ROM first.',
-                                  onCancel: () => {},
-                                );
-                                return;
-                              }
-                              MainScreen.emulator.run();
-                            },
-                            style: ElevatedButton.styleFrom(
-                              foregroundColor:
-                                  Colors.black, // Button background color
-                            ),
-                            child: const Text('Run',
-                                style: TextStyle(color: Colors.white))),
-                        ElevatedButton(
-                            onPressed: () {
-                              if (MainScreen.emulator.state !=
-                                  EmulatorState.running) {
-                                Modal.alert(context, 'Error',
-                                    "Not running can't be paused.",
-                                    onCancel: () => {});
-                                return;
-                              }
+      backgroundColor: Colors.black,
+      body: Row(
+        children: [
+          // Left side: LCD display
+          Expanded(
+            flex: 3,
+            child: Center(
+              child: Container(
+                margin: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white),
+                ),
+                child: const AspectRatio(
+                  aspectRatio: 160 / 144, // Gameboy screen resolution
+                  child: LCDWidget(key: Key('lcd')),
+                ),
+              ),
+            ),
+          ),
 
-                              MainScreen.emulator.pause();
-                            },
-                            style: ElevatedButton.styleFrom(
-                              foregroundColor:
-                                  Colors.black, // Button background color
-                            ),
-                            child: const Text('Pause',
-                                style: TextStyle(color: Colors.white))),
-                        ElevatedButton(
-                            onPressed: () {
-                              MainScreen.emulator.reset();
-                            },
-                            style: ElevatedButton.styleFrom(
-                              foregroundColor:
-                                  Colors.black, // Button background color
-                            ),
-                            child: const Text('Reset',
-                                style: TextStyle(color: Colors.white))),
-                        ElevatedButton(
-                            onPressed: () {
-                              MainScreen.emulator.debugStep();
-                            },
-                            style: ElevatedButton.styleFrom(
-                              foregroundColor:
-                                  Colors.black, // Button background color
-                            ),
-                            child: const Text('Step',
-                                style: TextStyle(color: Colors.white))),
-                        ElevatedButton(
-                            onPressed: () {
-                              pickFile(); // Call the method when the button is pressed
-                            },
-                            style: ElevatedButton.styleFrom(
-                              foregroundColor:
-                                  Colors.black, // Button background color
-                            ),
-                            child: const Text("Load",
-                                style: TextStyle(color: Colors.white))),
-                      ],
-                    ))
-                  ]))
-            ]));
-  }
-
-  /// Show a text input dialog to introduce string values.
-  textInputDialog({required String hint, required Function onOpen}) async {
-    TextEditingController controller = TextEditingController();
-    controller.text = hint;
-
-    await showDialog<String>(
-        context: context,
-        builder: (BuildContext cx) {
-          return AlertDialog(
-              contentPadding: const EdgeInsets.all(16.0),
-              content: Row(children: <Widget>[
-                Expanded(
-                  child: TextField(
-                    autofocus: true,
-                    controller: controller,
-                    decoration:
-                        InputDecoration(labelText: 'File Name', hintText: hint),
+          // Right side: Debug controls and emulator info
+          Expanded(
+            flex: 2,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.black,
+                border: Border.all(color: Colors.white),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'HUD',
+                    style: TextStyle(color: Colors.white, fontSize: 24),
                   ),
-                )
-              ]),
-              actions: <Widget>[
-                TextButton(
-                    child: const Text('Cancel'),
-                    onPressed: () {
-                      Navigator.pop(context);
-                    }),
-                TextButton(
-                    child: const Text('Open'),
-                    onPressed: () {
-                      onOpen(controller.text);
-                      Navigator.pop(context);
-                    })
-              ]);
-        });
+                  const Divider(color: Colors.grey),
+
+                  // Emulator controls (Load, Pause, Run, Reset)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: ElevatedButton(
+                          onPressed: loadFile,
+                          child: const Text('Debug'),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: ElevatedButton(
+                          onPressed: pickFile,
+                          child: const Text('Load'),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: ElevatedButton(
+                          onPressed: _runEmulator,
+                          child: const Text('Run'),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: ElevatedButton(
+                          onPressed: _pauseEmulator,
+                          child: const Text('Pause'),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: ElevatedButton(
+                          onPressed: _resetEmulator,
+                          child: const Text('Reset'),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const Divider(color: Colors.grey),
+
+                  // Debug information (FPS, cycles, speed, registers)
+                  Text(
+                    'cycles: ${MainScreen.emulator.cycles}',
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontFamily: 'ProggyClean',
+                      fontSize: 18,
+                    ),
+                  ),
+                  Text(
+                    'speed: ${MainScreen.emulator.speed}Hz',
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontFamily: 'ProggyClean',
+                      fontSize: 18,
+                    ),
+                  ),
+                  Text(
+                    'FPS: ${MainScreen.emulator.fps.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontFamily: 'ProggyClean',
+                      fontSize: 18,
+                    ),
+                  ),
+
+                  const Divider(color: Colors.grey),
+
+                  // Registers (PC, A, B, D, H, SP, flags Z, N, H, C)
+                  if (cpu != null && registers != null) ...[
+                    Text(
+                      'PC: ${cpu.pc.toRadixString(16)}',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontFamily: 'ProggyClean',
+                        fontSize: 18,
+                      ),
+                    ),
+                    Text(
+                      'SP: ${cpu.sp.toRadixString(16)}',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontFamily: 'ProggyClean',
+                        fontSize: 18,
+                      ),
+                    ),
+                    Text(
+                      'A: ${registers.a.toRadixString(16)}',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontFamily: 'ProggyClean',
+                        fontSize: 18,
+                      ),
+                    ),
+                    Text(
+                      'B: ${registers.b.toRadixString(16)}',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontFamily: 'ProggyClean',
+                        fontSize: 18,
+                      ),
+                    ),
+                    Text(
+                      'D: ${registers.d.toRadixString(16)}',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontFamily: 'ProggyClean',
+                        fontSize: 18,
+                      ),
+                    ),
+                    Text(
+                      'H: ${registers.h.toRadixString(16)}',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontFamily: 'ProggyClean',
+                        fontSize: 18,
+                      ),
+                    ),
+                    const Divider(color: Colors.grey),
+
+                    // Flag values (Z, N, H, C)
+                    Text(
+                      'Zero Flag (Z): ${registers.zeroFlagSet}',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontFamily: 'ProggyClean',
+                        fontSize: 18,
+                      ),
+                    ),
+                    Text(
+                      'Subtract Flag (N): ${registers.subtractFlagSet}',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontFamily: 'ProggyClean',
+                        fontSize: 18,
+                      ),
+                    ),
+                    Text(
+                      'Half-Carry Flag (H): ${registers.halfCarryFlagSet}',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontFamily: 'ProggyClean',
+                        fontSize: 18,
+                      ),
+                    ),
+                    Text(
+                      'Carry Flag (C): ${registers.carryFlagSet}',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontFamily: 'ProggyClean',
+                        fontSize: 18,
+                      ),
+                    ),
+                  ] else
+                    const Text(
+                      'No register data available',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

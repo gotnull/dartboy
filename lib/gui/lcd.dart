@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-import 'dart:ui';
 import 'package:dartboy/emulator/graphics/ppu.dart';
 import 'package:dartboy/gui/main_screen.dart';
 import 'package:dartboy/utils/color_converter.dart';
@@ -9,7 +8,7 @@ class LCDWidget extends StatefulWidget {
   const LCDWidget({required Key key}) : super(key: key);
 
   @override
-  LCDState createState() => LCDState(); // Just return the state, no logic here
+  LCDState createState() => LCDState();
 }
 
 class LCDState extends State<LCDWidget> with SingleTickerProviderStateMixin {
@@ -47,29 +46,27 @@ class LCDPainter extends CustomPainter {
 
     drawing = true;
 
-    int scale = 3;
-    int width = PPU.lcdWidth * scale;
-    int height = PPU.lcdHeight * scale;
-
-    // Avoid repeated allocations by reusing Float32List
-    Float32List points = Float32List(2);
+    int scale = 4; // Scale factor for larger display
+    int width = PPU.lcdWidth;
+    int height = PPU.lcdHeight;
 
     for (int x = 0; x < width; x++) {
       for (int y = 0; y < height; y++) {
-        Paint color = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.0;
+        Paint paint = Paint()..style = PaintingStyle.fill;
 
         // Safely access the current pixel data
-        color.color = ColorConverter.toColor(
-          cpu.ppu.current[(x ~/ scale) + (y ~/ scale) * PPU.lcdWidth],
+        int colorValue = cpu.ppu.current[x + y * width];
+        paint.color = ColorConverter.toColor(colorValue);
+
+        // Draw each pixel as a scaled-up rectangle
+        Rect pixelRect = Rect.fromLTWH(
+          (x * scale).toDouble(),
+          (y * scale).toDouble(),
+          scale.toDouble(),
+          scale.toDouble(),
         );
 
-        // Update the points
-        points[0] = x.toDouble() - width / 2.0;
-        points[1] = y.toDouble() + 10;
-
-        canvas.drawRawPoints(PointMode.points, points, color);
+        canvas.drawRect(pixelRect, paint);
       }
     }
 
