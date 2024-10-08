@@ -18,24 +18,19 @@ class Instructions {
   }
 
   static void CALL_cc_nn(CPU cpu, int op) {
-    //addDebugStack('CALL_cc_nn', cpu);
-
-    int jmp = (cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8));
-
+    int addr = (cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8));
     if (cpu.registers.getFlag(0x4 | ((op >> 3) & 0x7))) {
-      cpu.pushWordSP(cpu.pc);
-      cpu.pc = jmp;
+      cpu.pushWordSP(cpu.pc); // Save current PC
+      cpu.pc = addr; // Jump to new address
       cpu.tick(4);
     }
   }
 
   static void CALL_nn(CPU cpu) {
-    //addDebugStack('CALL_nn', cpu);
-
     int jmp = (cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8));
-    cpu.pushWordSP(cpu.pc);
+    cpu.pushWordSP(cpu.pc); // Push the current PC to the stack
     cpu.pc = jmp;
-    cpu.tick(4);
+    cpu.tick(4); // Ensure that the correct number of cycles is added here
   }
 
   static void LD_dd_nn(CPU cpu, int op) {
@@ -82,9 +77,7 @@ class Instructions {
   }
 
   static void LD_A_C(CPU cpu) {
-    //addDebugStack('LD_A_C', cpu);
-
-    cpu.registers.a = cpu.getUnsignedByte(0xFF00 | cpu.registers.c);
+    cpu.registers.a = cpu.mmu.readByte(0xFF00 | cpu.registers.c);
   }
 
   static void ADD_SP_n(CPU cpu) {
@@ -111,10 +104,10 @@ class Instructions {
   }
 
   static void SCF(CPU cpu) {
-    //addDebugStack('SCF', cpu);
-
-    cpu.registers.f &= Registers.zeroFlag;
-    cpu.registers.f |= Registers.carryFlag;
+    cpu.registers.f &= Registers.zeroFlag; // Keep zero flag unchanged
+    cpu.registers.f |= Registers.carryFlag; // Set carry flag
+    cpu.registers.f &= ~Registers.subtractFlag; // Clear subtract flag
+    cpu.registers.f &= ~Registers.halfCarryFlag; // Clear half-carry flag
   }
 
   static void CCF(CPU cpu) {
@@ -126,8 +119,6 @@ class Instructions {
   }
 
   static void LD_A_n(CPU cpu) {
-    //addDebugStack('LD_A_n', cpu);
-
     cpu.registers.a = cpu.getUnsignedByte(
         cpu.registers.getRegisterPairSP(Registers.hl) & 0xFFFF);
     cpu.registers.setRegisterPairSP(Registers.hl,
@@ -135,11 +126,8 @@ class Instructions {
   }
 
   static void LD_nn_A(CPU cpu) {
-    //addDebugStack('LD_nn_A', cpu);
-
-    cpu.mmu.writeByte(
-        cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8),
-        cpu.registers.a);
+    int address = cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8);
+    cpu.mmu.writeByte(address, cpu.registers.a);
   }
 
   static void LDHL_SP_n(CPU cpu) {
@@ -225,13 +213,24 @@ class Instructions {
   }
 
   static void LD_r_r(CPU cpu, int op) {
-    //addDebugStack('LD_r_r', cpu);
-
     int from = op & 0x7;
     int to = (op >> 3) & 0x7;
 
-    // important note: getIO(6) fetches (HL)
-    cpu.registers.setRegister(to, cpu.registers.getRegister(from) & 0xFF);
+    if (from == 6) {
+      // Handle LD r, (HL)
+      int hl = cpu.registers.getRegisterPairSP(Registers.hl);
+      int value = cpu.mmu.readByte(hl);
+      cpu.registers.setRegister(to, value);
+    } else if (to == 6) {
+      // Handle LD (HL), r
+      int hl = cpu.registers.getRegisterPairSP(Registers.hl);
+      int value = cpu.registers.getRegister(from);
+      cpu.mmu.writeByte(hl, value);
+    } else {
+      // Handle LD r, r
+      int value = cpu.registers.getRegister(from);
+      cpu.registers.setRegister(to, value);
+    }
   }
 
   static void CBPrefix(CPU cpu) {
@@ -262,8 +261,9 @@ class Instructions {
           // 0 1 b b b r r r
           cpu.registers.f &= Registers.carryFlag;
           cpu.registers.f |= Registers.halfCarryFlag;
-          if ((data & (0x1 << (op >> 3 & 0x7))) == 0)
+          if ((data & (0x1 << (op >> 3 & 0x7))) == 0) {
             cpu.registers.f |= Registers.zeroFlag;
+          }
         }
         break;
       case 0x0:
@@ -364,19 +364,9 @@ class Instructions {
               break;
             case 0x38: // SRcpu.registers.l m
               {
-                cpu.registers.f = 0;
-
-                // we'll be shifting right, so if bit 1 is set we set carry
-                if ((data & 0x1) != 0) {
-                  cpu.registers.f |= Registers.carryFlag;
-                }
-
+                cpu.registers.f = (data & 0x1) != 0 ? Registers.carryFlag : 0;
                 data >>= 1;
-
-                if (data == 0) {
-                  cpu.registers.f |= Registers.zeroFlag;
-                }
-
+                cpu.registers.f |= (data == 0 ? Registers.zeroFlag : 0);
                 cpu.registers.setRegister(reg, data);
               }
               break;
@@ -420,12 +410,10 @@ class Instructions {
                 cpu.registers.setRegister(reg, data);
               }
               break;
-            case 0x30: // SWAP m
-              {
-                data = ((data & 0xF0) >> 4) | ((data & 0x0F) << 4);
-                cpu.registers.f = data == 0 ? Registers.zeroFlag : 0;
-                cpu.registers.setRegister(reg, data);
-              }
+            case 0x30: // SWAP B (0x30)
+              data = ((data & 0xF0) >> 4) | ((data & 0x0F) << 4);
+              cpu.registers.setRegister(reg, data);
+              cpu.registers.f = data == 0 ? Registers.zeroFlag : 0;
               break;
             default:
               throw Exception(
@@ -450,156 +438,138 @@ class Instructions {
   }
 
   static void RLA(CPU cpu) {
-    //addDebugStack('RLA', cpu);
-
-    bool carryflag = (cpu.registers.f & Registers.carryFlag) != 0;
-    cpu.registers.f = 0;
-
-    // We'll be shifting left, so if bit 7 is set we set carry
-    if ((cpu.registers.a & 0x80) == 0x80) {
-      cpu.registers.f |= Registers.carryFlag;
-    }
-    cpu.registers.a <<= 1;
-    cpu.registers.a &= 0xFF;
-
-    // Move old cpu.registers.c into bit 0
-    if (carryflag) {
-      cpu.registers.a |= 1;
+    int carry = (cpu.registers.f & Registers.carryFlag) != 0 ? 1 : 0;
+    bool newCarry = (cpu.registers.a & 0x80) != 0; // Check bit 7
+    cpu.registers.a =
+        ((cpu.registers.a << 1) & 0xFF) | carry; // Shift left and add old carry
+    cpu.registers.f &=
+        ~Registers.zeroFlag; // Clear zero flag, since RLA never sets it
+    cpu.registers.f &= ~Registers.subtractFlag; // Clear subtract flag
+    cpu.registers.f &= ~Registers.halfCarryFlag; // Clear half-carry flag
+    if (newCarry) {
+      cpu.registers.f |= Registers.carryFlag; // Set new carry flag
+    } else {
+      cpu.registers.f &= ~Registers.carryFlag; // Clear carry flag
     }
   }
 
   static void RRA(CPU cpu) {
-    //addDebugStack('RRA', cpu);
-
-    bool carryflag = (cpu.registers.f & Registers.carryFlag) != 0;
-    cpu.registers.f = 0;
-
-    // we'll be shifting right, so if bit 1 is set we set carry
-    if ((cpu.registers.a & 0x1) == 0x1) {
-      cpu.registers.f |= Registers.carryFlag;
-    }
-    cpu.registers.a >>= 1;
-
-    // move old cpu.registers.c into bit 7
-    if (carryflag) {
-      cpu.registers.a |= 0x80;
+    int carry = (cpu.registers.f & Registers.carryFlag) != 0 ? 0x80 : 0;
+    bool newCarry = (cpu.registers.a & 0x01) != 0; // Check bit 0
+    cpu.registers.a = ((cpu.registers.a >> 1) & 0xFF) |
+        carry; // Shift right and add old carry
+    cpu.registers.f &=
+        ~Registers.zeroFlag; // Clear zero flag, since RRA never sets it
+    cpu.registers.f &= ~Registers.subtractFlag; // Clear subtract flag
+    cpu.registers.f &= ~Registers.halfCarryFlag; // Clear half-carry flag
+    if (newCarry) {
+      cpu.registers.f |= Registers.carryFlag; // Set new carry flag
+    } else {
+      cpu.registers.f &= ~Registers.carryFlag; // Clear carry flag
     }
   }
 
   static void RRCA(CPU cpu) {
-    //addDebugStack('RRCA', cpu);
+    bool carry = (cpu.registers.a & 0x01) != 0; // Check bit 0 for carry
+    cpu.registers.a = ((cpu.registers.a >> 1) | (carry ? 0x80 : 0)) &
+        0xFF; // Rotate right circular
 
-    cpu.registers.f = 0; //Registers.F_ZERO;
-    if ((cpu.registers.a & 0x1) == 0x1) {
-      cpu.registers.f |= Registers.carryFlag;
-    }
-    cpu.registers.a >>= 1;
-
-    // We're shifting circular right, add back bit 7
-    if ((cpu.registers.f & Registers.carryFlag) != 0) {
-      cpu.registers.a |= 0x80;
+    cpu.registers.f = 0; // Clear all flags
+    if (carry) {
+      cpu.registers.f |= Registers.carryFlag; // Set carry flag if bit 0 was set
     }
   }
 
   static void SBC_r(CPU cpu, int op) {
-    //addDebugStack('SBC_r', cpu);
-
     int carry = (cpu.registers.f & Registers.carryFlag) != 0 ? 1 : 0;
     int reg = cpu.registers.getRegister(op & 0x7) & 0xFF;
+    int result = cpu.registers.a - reg - carry;
 
-    cpu.registers.f = Registers.subtractFlag;
-    if ((cpu.registers.a & 0x0f) - (reg & 0x0f) - carry < 0) {
-      cpu.registers.f |= Registers.halfCarryFlag;
+    cpu.registers.f = Registers.subtractFlag; // Set subtract flag
+
+    if (((cpu.registers.a & 0xF) - (reg & 0xF) - carry) < 0) {
+      cpu.registers.f |= Registers.halfCarryFlag; // Set half-carry flag
     }
 
-    cpu.registers.a -= reg + carry;
-    if (cpu.registers.a < 0) {
-      cpu.registers.f |= Registers.carryFlag;
-      cpu.registers.a &= 0xFF;
+    if (result < 0) {
+      cpu.registers.f |=
+          Registers.carryFlag; // Set carry flag if result is negative
     }
+
+    cpu.registers.a = result & 0xFF; // Store result back in A
 
     if (cpu.registers.a == 0) {
-      cpu.registers.f |= Registers.zeroFlag;
+      cpu.registers.f |= Registers.zeroFlag; // Set zero flag if result is zero
     }
   }
 
   static void ADC_n(CPU cpu) {
-    //addDebugStack('ADC_n', cpu);
-
     int val = cpu.nextUnsignedBytePC();
     int carry = ((cpu.registers.f & Registers.carryFlag) != 0 ? 1 : 0);
-    int n = val + carry;
+    int result = cpu.registers.a + val + carry;
 
-    cpu.registers.f = 0;
+    cpu.registers.f = 0; // Reset flags
 
-    if ((((cpu.registers.a & 0xf) + (val & 0xf)) + carry & 0xF0) != 0) {
-      cpu.registers.f |= Registers.halfCarryFlag;
+    if (((cpu.registers.a & 0xF) + (val & 0xF) + carry) > 0xF) {
+      cpu.registers.f |= Registers.halfCarryFlag; // Set half-carry flag
     }
 
-    cpu.registers.a += n;
-
-    if (cpu.registers.a > 0xFF) {
-      cpu.registers.f |= Registers.carryFlag;
-      cpu.registers.a &= 0xFF;
+    if (result > 0xFF) {
+      cpu.registers.f |=
+          Registers.carryFlag; // Set carry flag if result exceeds 255
     }
+
+    cpu.registers.a = result & 0xFF; // Store lower 8 bits of result in A
 
     if (cpu.registers.a == 0) {
-      cpu.registers.f |= Registers.zeroFlag;
+      cpu.registers.f |= Registers.zeroFlag; // Set zero flag if result is zero
     }
   }
 
   static void RET(CPU cpu) {
-    //addDebugStack('RET', cpu);
-
-    cpu.pc =
-        (cpu.getUnsignedByte(cpu.sp + 1) << 8) | cpu.getUnsignedByte(cpu.sp);
-    cpu.sp += 2;
-    cpu.tick(4);
+    int lo = cpu.getUnsignedByte(cpu.sp); // Fetch lower byte from stack
+    int hi = cpu.getUnsignedByte(cpu.sp + 1); // Fetch upper byte from stack
+    cpu.sp += 2; // Increment stack pointer
+    cpu.pc = (hi << 8) | lo; // Set PC to the value retrieved from stack
+    cpu.tick(4); // Add extra cycles
   }
 
   static void XOR_n(CPU cpu) {
-    //addDebugStack('XOR_n', cpu);
-
-    cpu.registers.a ^= cpu.nextUnsignedBytePC();
-    cpu.registers.f = 0;
+    int value = cpu.nextUnsignedBytePC(); // Fetch immediate value
+    cpu.registers.a ^= value; // XOR A with immediate value
+    cpu.registers.f = 0; // Reset flags
 
     if (cpu.registers.a == 0) {
+      // Set zero flag if result is 0
       cpu.registers.f |= Registers.zeroFlag;
     }
   }
 
   static void AND_n(CPU cpu) {
-    //addDebugStack('AND_n', cpu);
-
-    cpu.registers.a &= cpu.nextUnsignedBytePC();
-    cpu.registers.f = Registers.halfCarryFlag;
+    int value = cpu.nextUnsignedBytePC(); // Fetch immediate value
+    cpu.registers.a &= value; // AND A with immediate value
+    cpu.registers.f = Registers.halfCarryFlag; // Always set the half-carry flag
 
     if (cpu.registers.a == 0) {
+      // Set zero flag if result is 0
       cpu.registers.f |= Registers.zeroFlag;
     }
   }
 
   static void EI(CPU cpu) {
-    //addDebugStack('EI', cpu);
-
-    cpu.interruptsEnabled = true;
-
-    // Note that during the execution of this instruction and the following instruction, maskable interrupts are disabled.
-    cpu.tick(4);
-    cpu.execute();
+    cpu.enableInterruptsNextCycle =
+        true; // Enable interrupts after the next instruction
+    cpu.tick(4); // Delay for 4 cycles
   }
 
   static void DI(CPU cpu) {
-    //addDebugStack('DI', cpu);
-
     cpu.interruptsEnabled = false;
+    // Just disabling interrupts, no delay needed
   }
 
   static void RST_p(CPU cpu, int op) {
-    //addDebugStack('RST_p', cpu);
-
-    cpu.pushWordSP(cpu.pc);
-    cpu.pc = op & 0x38;
+    cpu.pushWordSP(cpu.pc); // Save current PC on the stack
+    cpu.pc = op & 0x38; // Jump to the specific reset vector
     cpu.tick(4);
   }
 
@@ -616,9 +586,12 @@ class Instructions {
   }
 
   static void HALT(CPU cpu) {
-    //addDebugStack('HALT', cpu);
-
-    cpu.halted = true;
+    if (!cpu.interruptsEnabled) {
+      // Halt bug: The PC doesn't increase, and the CPU stays in HALT state until an interrupt occurs.
+      cpu.halted = true;
+    } else {
+      cpu.halted = true;
+    }
   }
 
   static void LDH_FFnn(CPU cpu) {
@@ -639,50 +612,42 @@ class Instructions {
   }
 
   static void JP_c_nn(CPU cpu, int op) {
-    //addDebugStack('JP_c_nn', cpu);
-
-    int npc = cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8);
-
+    int addr = cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8);
     if (cpu.registers.getFlag(0x4 | ((op >> 3) & 0x7))) {
-      cpu.pc = npc;
+      cpu.pc = addr; // Jump to new address
       cpu.tick(4);
     }
   }
 
   static void DAA(CPU cpu) {
-    //addDebugStack('DAA', cpu);
+    int a = cpu.registers.a;
+    int correction = 0;
 
-    int tmp = cpu.registers.a;
+    // Correct the value based on the carry or half-carry flags
+    if ((cpu.registers.f & Registers.carryFlag) != 0) {
+      correction |= 0x60;
+    }
+    if ((cpu.registers.f & Registers.halfCarryFlag) != 0 || (a & 0x0F) > 9) {
+      correction |= 0x06;
+    }
 
     if ((cpu.registers.f & Registers.subtractFlag) == 0) {
-      if ((cpu.registers.f & Registers.halfCarryFlag) != 0 ||
-          ((tmp & 0x0f) > 9)) {
-        tmp += 0x06;
+      if (a > 0x99) {
+        correction |= 0x60;
+        cpu.registers.f |= Registers.carryFlag;
       }
-      if ((cpu.registers.f & Registers.carryFlag) != 0 || ((tmp > 0x9f))) {
-        tmp += 0x60;
-      }
+      a += correction;
     } else {
-      if ((cpu.registers.f & Registers.halfCarryFlag) != 0) {
-        tmp = ((tmp - 6) & 0xFF);
-      }
-      if ((cpu.registers.f & Registers.carryFlag) != 0) {
-        tmp -= 0x60;
-      }
+      a -= correction;
     }
 
-    cpu.registers.f &= Registers.subtractFlag | Registers.carryFlag;
+    a &= 0xFF;
 
-    if (tmp > 0xFF) {
-      cpu.registers.f |= Registers.carryFlag;
-      tmp &= 0xFF;
-    }
-
-    if (tmp == 0) {
+    cpu.registers.f &= ~(Registers.halfCarryFlag | Registers.zeroFlag);
+    if (a == 0) {
       cpu.registers.f |= Registers.zeroFlag;
     }
-
-    cpu.registers.a = tmp;
+    cpu.registers.a = a;
   }
 
   static void JR_e(CPU cpu) {
@@ -742,23 +707,20 @@ class Instructions {
   }
 
   static void ADC_r(CPU cpu, int op) {
-    //addDebugStack('ADC_r', cpu);
+    int carry = (cpu.registers.f & Registers.carryFlag) != 0 ? 1 : 0;
+    int reg = cpu.registers.getRegister(op & 0x7) & 0xFF;
+    int result = cpu.registers.a + reg + carry;
 
-    int carry = ((cpu.registers.f & Registers.carryFlag) != 0 ? 1 : 0);
-    int reg = (cpu.registers.getRegister(op & 0x7) & 0xFF);
-
-    int d = carry + reg;
     cpu.registers.f = 0;
-    if ((((cpu.registers.a & 0xf) + (reg & 0xf) + carry) & 0xF0) != 0) {
+    if (((cpu.registers.a & 0xF) + (reg & 0xF) + carry) > 0xF) {
       cpu.registers.f |= Registers.halfCarryFlag;
     }
 
-    cpu.registers.a += d;
-
-    if (cpu.registers.a > 0xFF) {
+    if (result > 0xFF) {
       cpu.registers.f |= Registers.carryFlag;
-      cpu.registers.a &= 0xFF;
     }
+
+    cpu.registers.a = result & 0xFF;
 
     if (cpu.registers.a == 0) {
       cpu.registers.f |= Registers.zeroFlag;
@@ -766,18 +728,18 @@ class Instructions {
   }
 
   static void ADD(CPU cpu, int n) {
-    //addDebugStack('ADD', cpu);
+    int result = cpu.registers.a + n;
 
     cpu.registers.f = 0;
-    if ((((cpu.registers.a & 0xf) + (n & 0xf)) & 0xF0) != 0) {
+    if (((cpu.registers.a & 0xF) + (n & 0xF)) > 0xF) {
       cpu.registers.f |= Registers.halfCarryFlag;
     }
 
-    cpu.registers.a += n;
-    if (cpu.registers.a > 0xFF) {
+    if (result > 0xFF) {
       cpu.registers.f |= Registers.carryFlag;
-      cpu.registers.a &= 0xFF;
     }
+
+    cpu.registers.a = result & 0xFF;
 
     if (cpu.registers.a == 0) {
       cpu.registers.f |= Registers.zeroFlag;
@@ -890,8 +852,6 @@ class Instructions {
   }
 
   static void CP(CPU cpu, int n) {
-    //addDebugStack('CP', cpu);
-
     cpu.registers.f = Registers.subtractFlag;
 
     if (cpu.registers.a < n) {
@@ -900,7 +860,7 @@ class Instructions {
       cpu.registers.f |= Registers.zeroFlag;
     }
 
-    if ((cpu.registers.a & 0xf) < ((cpu.registers.a - n) & 0xf)) {
+    if ((cpu.registers.a & 0xF) < (n & 0xF)) {
       cpu.registers.f |= Registers.halfCarryFlag;
     }
   }
@@ -954,20 +914,19 @@ class Instructions {
   }
 
   static void RLCA(CPU cpu) {
-    //addDebugStack('RLCA', cpu);
+    int a = cpu.registers.a;
+    int carry = (a & 0x80) >> 7; // Check bit 7 (carry bit)
 
-    bool carry = (cpu.registers.a & 0x80) != 0;
-    cpu.registers.a <<= 1;
-    cpu.registers.f = 0; // &= Registers.F_ZERO?
+    // Rotate left and set carry
+    a = ((a << 1) | carry) & 0xFF;
 
-    if (carry) {
-      cpu.registers.f |= Registers.carryFlag;
-      cpu.registers.a |= 1;
-    } else {
-      cpu.registers.f = 0;
-    }
+    // Update registers
+    cpu.registers.a = a;
+    cpu.registers.f = (carry != 0)
+        ? Registers.carryFlag
+        : 0; // Set carry flag if carry was set
 
-    cpu.registers.a &= 0xFF;
+    // Zero flag is not affected, so no need to modify it
   }
 
   static void JP_nn(CPU cpu) {
@@ -996,19 +955,25 @@ class Instructions {
   }
 
   static void POP_rr(CPU cpu, int op) {
-    //addDebugStack('POP_rr', cpu);
+    // Get the register pair to pop the values into
+    int pair = (op >> 4) & 0x3;
 
-    cpu.registers.setRegisterPair((op >> 4) & 0x3,
-        cpu.getSignedByte(cpu.sp + 1), cpu.getSignedByte(cpu.sp));
-    cpu.sp += 2;
+    // Pop two bytes from the stack and combine them into a word
+    int lo = cpu.popByteSP();
+    int hi = cpu.popByteSP();
+    cpu.registers.setRegisterPair(pair, hi, lo);
   }
 
   static void PUSH_rr(CPU cpu, int op) {
-    //addDebugStack('PUSH_rr', cpu);
+    // Get the register pair
+    int pair = (op >> 4) & 0x3;
 
-    int val = cpu.registers.getRegisterPair((op >> 4) & 0x3);
+    // Fetch the value from the register pair
+    int val = cpu.registers.getRegisterPair(pair);
+
+    // Push the higher byte first, then the lower byte onto the stack
     cpu.pushWordSP(val);
-    cpu.tick(4);
+    cpu.tick(4); // Extra cycles for PUSH
   }
 
   static void LD_SP_HL(CPU cpu) {

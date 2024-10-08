@@ -205,6 +205,12 @@ class Registers {
     throw Exception('Unknown register pair address getRegisterPairSP().');
   }
 
+  int popByteSP() {
+    int value = cpu.mmu.readByte(sp); // Read byte from the stack pointer (SP)
+    cpu.sp = (sp + 1) & 0xFFFF; // Increment SP and wrap around at 16 bits
+    return value;
+  }
+
   /// Fetches the world value of a registers pair, r is the register id as encoded by opcode (PUSH_rr).
   /// Can be used with a single word value as the second argument.
   /// Returns the value of the register

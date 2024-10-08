@@ -1,8 +1,7 @@
 /// Configuration contains global emulation configuration.
 ///
 /// Type of system being emulated, debug configuration, etc.
-class Configuration
-{
+class Configuration {
   /// Debug variable to enable and disable the background rendering.
   static bool drawBackgroundLayer = true;
 

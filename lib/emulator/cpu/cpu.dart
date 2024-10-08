@@ -33,6 +33,8 @@ class CPU {
   /// Whether the CPU should trigger interrupt handlers.
   bool interruptsEnabled;
 
+  bool enableInterruptsNextCycle;
+
   /// The current CPU clock cycle since the beginning of the emulation.
   int clocks = 0;
 
@@ -73,6 +75,7 @@ class CPU {
   CPU(this.cartridge)
       : halted = false,
         interruptsEnabled = false,
+        enableInterruptsNextCycle = false,
         doubleSpeed = false {
     mmu = cartridge.createController(this);
     ppu = PPU(this);
@@ -124,6 +127,16 @@ class CPU {
   int getSignedByte(int address) {
     tick(4);
     return (mmu.readByte(address) & 0xFF).toSigned(8);
+  }
+
+  int popByteSP() {
+    int value = mmu.readByte(sp); // Read byte from the stack pointer (SP)
+    sp = (sp + 1) & 0xFFFF; // Increment SP and wrap around at 16 bits
+    return value;
+  }
+
+  void setEnableInterruptsNextCycle(bool value) {
+    enableInterruptsNextCycle = value;
   }
 
   /// Write a byte into memory (takes 4 clocks)
@@ -323,6 +336,8 @@ class CPU {
     }
 
     int op = nextUnsignedBytePC();
+
+    // print("Executing instruction: 0x${op.toRadixString(16)} at PC: 0x${pc.toRadixString(16)}");
 
     switch (op) {
       case 0x00:
@@ -645,14 +660,22 @@ class CPU {
         break;
       default:
         switch (op & 0xC0) {
-          case 0x40: // LD r, r
+          case 0x40:
             Instructions.LD_r_r(this, op);
             break;
           default:
-            throw Exception(
+            print(
               'Unsupported operation, (OP: 0x${op.toRadixString(16)})',
             );
+            break;
         }
+        break; // End of the outer switch default case
+    }
+
+    // Check if interrupts should be enabled in the next cycle
+    if (enableInterruptsNextCycle) {
+      interruptsEnabled = true;
+      enableInterruptsNextCycle = false;
     }
   }
 }
