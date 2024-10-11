@@ -624,31 +624,48 @@ class Instructions {
     int a = cpu.registers.a;
     int correction = 0;
 
-    // Correct the value based on the carry or half-carry flags
-    if ((cpu.registers.f & Registers.carryFlag) != 0) {
-      correction |= 0x60;
-    }
-    if ((cpu.registers.f & Registers.halfCarryFlag) != 0 || (a & 0x0F) > 9) {
-      correction |= 0x06;
-    }
+    bool carry = false;
 
-    if ((cpu.registers.f & Registers.subtractFlag) == 0) {
-      if (a > 0x99) {
+    // If in subtraction mode, undo the correction for previous addition
+    if ((cpu.registers.f & Registers.subtractFlag) != 0) {
+      if ((cpu.registers.f & Registers.halfCarryFlag) != 0) {
+        correction |= 0x06;
+      }
+      if ((cpu.registers.f & Registers.carryFlag) != 0) {
         correction |= 0x60;
-        cpu.registers.f |= Registers.carryFlag;
+        carry = true;
+      }
+      a -= correction;
+    } else {
+      // Addition mode
+      if ((cpu.registers.f & Registers.halfCarryFlag) != 0 || (a & 0x0F) > 9) {
+        correction |= 0x06;
+      }
+      if ((cpu.registers.f & Registers.carryFlag) != 0 || a > 0x99) {
+        correction |= 0x60;
+        carry = true;
       }
       a += correction;
-    } else {
-      a -= correction;
     }
 
-    a &= 0xFF;
+    a &= 0xFF; // Limit to 8 bits
 
-    cpu.registers.f &= ~(Registers.halfCarryFlag | Registers.zeroFlag);
+    // Update flags
+    cpu.registers.f &= ~(Registers.halfCarryFlag |
+        Registers.zeroFlag |
+        Registers.carryFlag); // Clear the flags
+    if (carry) {
+      cpu.registers.f |= Registers.carryFlag;
+    }
     if (a == 0) {
       cpu.registers.f |= Registers.zeroFlag;
     }
-    cpu.registers.a = a;
+
+    // Log the result and updated flags
+    Console.logToFile(
+        'DAA: Updated A = 0x${a.toRadixString(16)}, F = 0x${cpu.registers.f.toRadixString(16)}');
+
+    cpu.registers.a = a; // Store the final value of A
   }
 
   static void JR_e(CPU cpu) {
