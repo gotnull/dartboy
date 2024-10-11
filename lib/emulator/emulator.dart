@@ -101,7 +101,6 @@ class Emulator {
     state = EmulatorState.running;
 
     int frequency = CPU.frequency;
-    double periodCPU = 1e6 / frequency; // Time per CPU cycle in microseconds
 
     // FPS target
     fps = 60; // Standard for most emulators

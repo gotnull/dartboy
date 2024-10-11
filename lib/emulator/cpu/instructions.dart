@@ -661,10 +661,6 @@ class Instructions {
       cpu.registers.f |= Registers.zeroFlag;
     }
 
-    // Log the result and updated flags
-    Console.logToFile(
-        'DAA: Updated A = 0x${a.toRadixString(16)}, F = 0x${cpu.registers.f.toRadixString(16)}');
-
     cpu.registers.a = a; // Store the final value of A
   }
 

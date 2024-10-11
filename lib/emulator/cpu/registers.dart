@@ -1,5 +1,4 @@
 import 'package:dartboy/emulator/memory/cartridge.dart';
-import 'package:dartboy/utils/console.dart';
 
 import 'cpu.dart';
 
