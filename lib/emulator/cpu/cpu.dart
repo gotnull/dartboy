@@ -4,6 +4,7 @@ import 'package:dartboy/emulator/graphics/ppu.dart';
 import 'package:dartboy/emulator/memory/cartridge.dart';
 import 'package:dartboy/emulator/memory/memory_registers.dart';
 import 'package:dartboy/emulator/memory/mmu/mmu.dart';
+import 'package:dartboy/utils/console.dart';
 
 /// CPU class is responsible for the instruction execution, interrupts, and timing of the system.
 ///

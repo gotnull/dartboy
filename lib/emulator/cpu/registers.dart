@@ -1,4 +1,5 @@
 import 'package:dartboy/emulator/memory/cartridge.dart';
+import 'package:dartboy/utils/console.dart';
 
 import 'cpu.dart';
 
@@ -229,7 +230,7 @@ class Registers {
       l = lo;
     } else if (r == af) {
       a = hi;
-      f = lo & 0xF;
+      f = lo & 0xF0;
     }
   }
 

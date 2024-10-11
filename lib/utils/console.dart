@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -28,6 +29,17 @@ class Console {
       debugPrintSynchronously(build(obj));
     } else {
       print(build(obj));
+    }
+  }
+
+  static int logCounter = 0;
+  static int logLimit = 5000; // Limit log to 5000 lines, adjust as needed
+
+  static void logToFile(String message) {
+    if (logCounter < logLimit) {
+      final logFile = File('cpu_log.txt');
+      logFile.writeAsStringSync('$message\n', mode: FileMode.append);
+      logCounter++;
     }
   }
 }

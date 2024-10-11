@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:dartboy/emulator/cpu/cpu.dart';
 import 'package:dartboy/emulator/memory/mmu/mbc1.dart';
@@ -56,9 +57,19 @@ class Cartridge {
   /// SGB mode indicates if the game has super gameboy features
   bool superGameboy = false;
 
+  // 0x134 - 0x143 Title section in the header
+  Uint8List title = Uint8List(0x144 - 0x134);
+
+  // Manufacturer Code (0x13F - 0x142)
+  Uint8List get cartManufacturerCode =>
+      title.sublist(0x13F - 0x134, 0x143 - 0x134);
+
+  // CGB Flag (0x143)
+  int get cartCgbFlag => title[0x143 - 0x134];
+
   /// Load cartridge byte data
   void load(List<int> data) {
-    size = data.length;
+    size = (data.length / 1024).round();
     this.data = data;
 
     type = readByte(0x147);
@@ -78,6 +89,25 @@ class Cartridge {
 
     setBankSizeRAM();
     setBankSizeROM();
+  }
+
+  String getRamSize() {
+    switch (ramType) {
+      case 0:
+        return "None";
+      case 1:
+        return "2k";
+      case 2:
+        return "8k";
+      case 3:
+        return "32k";
+      case 4:
+        return "128k";
+      case 5:
+        return "64k";
+      default:
+        return "Unknown";
+    }
   }
 
   /// Create a the memory controller of the cartridge.

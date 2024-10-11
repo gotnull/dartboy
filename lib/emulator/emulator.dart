@@ -60,10 +60,16 @@ class Emulator {
   /// Print some information about the ROM file loaded into the emulator.
   void printCartridgeInfo() {
     print('Cartridge info:');
-    print('Type: ${cpu?.cartridge.type}');
-    print('Name: ${cpu?.cartridge.name}');
+    print('Title: ${cpu?.cartridge.name}');
+    print('ROM Size: ${cpu?.cartridge.size}k');
+    print('ROM Banks: ${cpu?.cartridge.romBanks}');
+    print('RAM Size: ${cpu?.cartridge.getRamSize()}');
+    print('Cartridge Type: ${cpu?.cartridge.type}');
     print('GB: ${cpu?.cartridge.gameboyType}');
     print('SGB: ${cpu?.cartridge.superGameboy}');
+    print(
+      'Manufacturer Code: ${cpu?.cartridge.cartManufacturerCode.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}',
+    );
   }
 
   /// Reset the emulator, stop running the code and unload the cartridge

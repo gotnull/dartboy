@@ -1,5 +1,6 @@
 import 'package:dartboy/emulator/cpu/cpu.dart';
 import 'package:dartboy/emulator/cpu/registers.dart';
+import 'package:dartboy/utils/console.dart';
 
 /// Class to handle instruction implementation, instructions run on top of the CPU object.
 ///
@@ -955,10 +956,8 @@ class Instructions {
   }
 
   static void POP_rr(CPU cpu, int op) {
-    // Get the register pair to pop the values into
     int pair = (op >> 4) & 0x3;
 
-    // Pop two bytes from the stack and combine them into a word
     int lo = cpu.popByteSP();
     int hi = cpu.popByteSP();
     cpu.registers.setRegisterPair(pair, hi, lo);
