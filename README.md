@@ -15,6 +15,18 @@
 
 <img src="https://raw.githubusercontent.com/tentone/dartboy/master/readme/web.png" width="250"><img src="https://raw.githubusercontent.com/tentone/dartboy/master/readme/android.png" width="150"><img src="https://raw.githubusercontent.com/tentone/dartboy/master/readme/windows.png" width="250">
 
+# [Blargg's test](https://github.com/retrio/gb-test-roms)
+
+| Test | Status |
+|----------|----------|
+| cgb_sound      | ❌   |
+| cpu_instrs     | ⏳ (1 out of 11 failingR)     |
+| instr_timing   | ❌     |
+| interrupt_time | ❌   |
+| mem_timing     | ❌     |
+| mem_timing-2   | ❌     |
+| oam_bug        | ❌     |
+| halt_bug.gb    | ❌     |
 
 
 ### Run the Emulator
