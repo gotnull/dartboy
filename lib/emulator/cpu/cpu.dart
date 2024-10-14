@@ -341,22 +341,22 @@ class CPU {
 
     switch (op) {
       case 0x00:
-        Instructions.NOP(this);
+        Instructions.nop(this);
         break;
       case 0xC4:
       case 0xCC:
       case 0xD4:
       case 0xDC:
-        Instructions.CALL_cc_nn(this, op);
+        Instructions.callccnn(this, op);
         break;
       case 0xCD:
-        Instructions.CALL_nn(this);
+        Instructions.callnn(this);
         break;
       case 0x01:
       case 0x11:
       case 0x21:
       case 0x31:
-        Instructions.LD_dd_nn(this, op);
+        Instructions.ldddnn(this, op);
         break;
       case 0x06:
       case 0x0E:
@@ -366,91 +366,91 @@ class CPU {
       case 0x2E:
       case 0x36:
       case 0x3E:
-        Instructions.LD_r_n(this, op);
+        Instructions.ldrn(this, op);
         break;
       case 0x0A:
-        Instructions.LD_A_BC(this);
+        Instructions.ldabc(this);
         break;
       case 0x1A:
-        Instructions.LD_A_DE(this);
+        Instructions.ldade(this);
         break;
       case 0x02:
-        Instructions.LD_BC_A(this);
+        Instructions.ldcba(this);
         break;
       case 0x12:
-        Instructions.LD_DE_A(this);
+        Instructions.lddea(this);
         break;
       case 0xF2:
-        Instructions.LD_A_C(this);
+        Instructions.ldac(this);
         break;
       case 0xE8:
-        Instructions.ADD_SP_n(this);
+        Instructions.addspn(this);
         break;
       case 0x37:
-        Instructions.SCF(this);
+        Instructions.scf(this);
         break;
       case 0x3F:
-        Instructions.CCF(this);
+        Instructions.ccf(this);
         break;
       case 0x3A:
-        Instructions.LD_A_n(this);
+        Instructions.ldan(this);
         break;
       case 0xEA:
-        Instructions.LD_nn_A(this);
+        Instructions.ldnna(this);
         break;
       case 0xF8:
-        Instructions.LDHL_SP_n(this);
+        Instructions.ldhlspn(this);
         break;
       case 0x2F:
-        Instructions.CPL(this);
+        Instructions.cpl(this);
         break;
       case 0xE0:
-        Instructions.LD_FFn_A(this);
+        Instructions.ldffna(this);
         break;
       case 0xE2:
-        Instructions.LDH_FFC_A(this);
+        Instructions.ldhffca(this);
         break;
       case 0xFA:
-        Instructions.LD_A_nn(this);
+        Instructions.ldann(this);
         break;
       case 0x2A:
-        Instructions.LD_A_HLI(this);
+        Instructions.ldahli(this);
         break;
       case 0x22:
-        Instructions.LD_HLI_A(this);
+        Instructions.ldhlia(this);
         break;
       case 0x32:
-        Instructions.LD_HLD_A(this);
+        Instructions.ldhlda(this);
         break;
       case 0x10:
-        Instructions.STOP(this);
+        Instructions.stop(this);
         break;
       case 0xf9:
-        Instructions.LD_SP_HL(this);
+        Instructions.ldsphl(this);
         break;
       case 0xc5: // BC
       case 0xd5: // DE
       case 0xe5: // HL
       case 0xf5: // AF
-        Instructions.PUSH_rr(this, op);
+        Instructions.pushrr(this, op);
         break;
       case 0xc1: // BC
       case 0xd1: // DE
       case 0xe1: // HL
       case 0xf1: // AF
-        Instructions.POP_rr(this, op);
+        Instructions.poprr(this, op);
         break;
       case 0x08:
-        Instructions.LD_a16_SP(this);
+        Instructions.lda16sp(this);
         break;
       case 0xd9:
-        Instructions.RETI(this);
+        Instructions.reti(this);
         break;
       case 0xc3:
-        Instructions.JP_nn(this);
+        Instructions.jpnn(this);
         break;
       case 0x07:
-        Instructions.RLCA(this);
+        Instructions.rlca(this);
         break;
       case 0x3c: // A
       case 0x4: // B
@@ -460,7 +460,7 @@ class CPU {
       case 0x24: // F
       case 0x34: // (HL)
       case 0x2c: // G
-        Instructions.INC_r(this, op);
+        Instructions.incr(this, op);
         break;
       case 0x3d: // A
       case 0x05: // B
@@ -470,13 +470,13 @@ class CPU {
       case 0x25: // H
       case 0x2d: // L
       case 0x35: // (HL)
-        Instructions.DEC_r(this, op);
+        Instructions.decr(this, op);
         break;
       case 0x03:
       case 0x13:
       case 0x23:
       case 0x33:
-        Instructions.INC_rr(this, op);
+        Instructions.incrr(this, op);
         break;
       case 0xb8:
       case 0xb9:
@@ -486,25 +486,25 @@ class CPU {
       case 0xbd:
       case 0xbe:
       case 0xbf:
-        Instructions.CP_rr(this, op);
+        Instructions.cprr(this, op);
         break;
       case 0xfe:
-        Instructions.CP_n(this);
+        Instructions.cpn(this);
         break;
       case 0x09:
       case 0x19:
       case 0x29:
       case 0x39:
-        Instructions.ADD_HL_rr(this, op);
+        Instructions.addhlrr(this, op);
         break;
       case 0xe9:
-        Instructions.JP_HL(this);
+        Instructions.jphl(this);
         break;
       case 0xde:
-        Instructions.SBC_n(this);
+        Instructions.sbcn(this);
         break;
       case 0xd6:
-        Instructions.SUB_n(this);
+        Instructions.subn(this);
         break;
       case 0x90:
       case 0x91:
@@ -514,10 +514,10 @@ class CPU {
       case 0x95:
       case 0x96: // (HL)
       case 0x97:
-        Instructions.SUB_r(this, op);
+        Instructions.subr(this, op);
         break;
       case 0xc6:
-        Instructions.ADD_n(this);
+        Instructions.addn(this);
         break;
       case 0x87:
       case 0x80:
@@ -527,7 +527,7 @@ class CPU {
       case 0x84:
       case 0x85:
       case 0x86: // (HL)
-        Instructions.ADD_r(this, op);
+        Instructions.addr(this, op);
         break;
       case 0x88:
       case 0x89:
@@ -537,7 +537,7 @@ class CPU {
       case 0x8e:
       case 0x8d:
       case 0x8f:
-        Instructions.ADC_r(this, op);
+        Instructions.adcr(this, op);
         break;
       case 0xa0:
       case 0xa1:
@@ -547,7 +547,7 @@ class CPU {
       case 0xa5:
       case 0xa6: // (HL)
       case 0xa7:
-        Instructions.AND_r(this, op);
+        Instructions.andr(this, op);
         break;
       case 0xa8:
       case 0xa9:
@@ -557,10 +557,10 @@ class CPU {
       case 0xad:
       case 0xae:
       case 0xaf:
-        Instructions.XOR_r(this, op);
+        Instructions.xorr(this, op);
         break;
       case 0xf6:
-        Instructions.OR_n(this);
+        Instructions.orn(this);
         break;
       case 0xb0:
       case 0xb1:
@@ -570,37 +570,37 @@ class CPU {
       case 0xb5:
       case 0xb6: // (HL)
       case 0xb7:
-        Instructions.OR_r(this, op);
+        Instructions.orr(this, op);
         break;
       case 0x18:
-        Instructions.JR_e(this);
+        Instructions.jre(this);
         break;
       case 0x27:
-        Instructions.DAA(this);
+        Instructions.daa(this);
         break;
       case 0xca:
       case 0xc2: // NZ
       case 0xd2:
       case 0xda:
-        Instructions.JP_c_nn(this, op);
+        Instructions.jpcnn(this, op);
         break;
       case 0x20: // NZ
       case 0x28:
       case 0x30:
       case 0x38:
-        Instructions.JR_c_e(this, op);
+        Instructions.jrce(this, op);
         break;
       case 0xf0:
-        Instructions.LDH_FFnn(this);
+        Instructions.ldhffnn(this);
         break;
       case 0x76:
-        Instructions.HALT(this);
+        Instructions.halt(this);
         break;
       case 0xc0: // NZ non zero (Z)
       case 0xc8: // Z zero (Z)
       case 0xd0: // NC non carry (C)
       case 0xd8: // Carry (C)
-        Instructions.RET_c(this, op);
+        Instructions.retc(this, op);
         break;
       case 0xc7:
       case 0xcf:
@@ -610,25 +610,25 @@ class CPU {
       case 0xef:
       case 0xf7:
       case 0xFF:
-        Instructions.RST_p(this, op);
+        Instructions.rstp(this, op);
         break;
       case 0xf3:
-        Instructions.DI(this);
+        Instructions.di(this);
         break;
       case 0xfb:
-        Instructions.EI(this);
+        Instructions.ei(this);
         break;
       case 0xE6:
-        Instructions.AND_n(this);
+        Instructions.andn(this);
         break;
       case 0xEE:
-        Instructions.XOR_n(this);
+        Instructions.xorn(this);
         break;
       case 0xc9:
-        Instructions.RET(this);
+        Instructions.ret(this);
         break;
       case 0xce:
-        Instructions.ADC_n(this);
+        Instructions.adcn(this);
         break;
       case 0x98:
       case 0x99:
@@ -638,30 +638,30 @@ class CPU {
       case 0x9d:
       case 0x9e: // (HL)
       case 0x9f:
-        Instructions.SBC_r(this, op);
+        Instructions.sbcr(this, op);
         break;
       case 0x0F: // RRCA
-        Instructions.RRCA(this);
+        Instructions.rrca(this);
         break;
       case 0x1f: // RRA
-        Instructions.RRA(this);
+        Instructions.rra(this);
         break;
       case 0x17: // RLA
-        Instructions.RLA(this);
+        Instructions.rla(this);
         break;
       case 0x0b:
       case 0x1b:
       case 0x2b:
       case 0x3b:
-        Instructions.DEC_rr(this, op);
+        Instructions.decrr(this, op);
         break;
       case 0xcb:
-        Instructions.CBPrefix(this);
+        Instructions.cbprefix(this);
         break;
       default:
         switch (op & 0xC0) {
           case 0x40:
-            Instructions.LD_r_r(this, op);
+            Instructions.ldrr(this, op);
             break;
           default:
             print(
