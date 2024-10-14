@@ -1,6 +1,5 @@
 import 'package:dartboy/emulator/cpu/cpu.dart';
 import 'package:dartboy/emulator/cpu/registers.dart';
-import 'package:dartboy/utils/console.dart';
 
 /// Class to handle instruction implementation, instructions run on top of the CPU object.
 ///
@@ -14,9 +13,7 @@ class Instructions {
     return value;
   }
 
-  static void NOP(CPU cpu) {
-    //addDebugStack('NOP', cpu);
-  }
+  static void NOP(CPU cpu) {}
 
   static void CALL_cc_nn(CPU cpu, int op) {
     int addr = (cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8));
@@ -35,44 +32,32 @@ class Instructions {
   }
 
   static void LD_dd_nn(CPU cpu, int op) {
-    //addDebugStack('LD_dd_nn', cpu);
-
     cpu.registers.setRegisterPairSP((op >> 4) & 0x3,
         cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8));
   }
 
   static void LD_r_n(CPU cpu, int op) {
-    //addDebugStack('LD_r_n', cpu);
-
     int to = (op >> 3) & 0x7;
     int n = cpu.nextUnsignedBytePC();
     cpu.registers.setRegister(to, n);
   }
 
   static void LD_A_BC(CPU cpu) {
-    //addDebugStack('LD_A_BC', cpu);
-
     cpu.registers.a =
         cpu.getUnsignedByte(cpu.registers.getRegisterPairSP(Registers.bc));
   }
 
   static void LD_A_DE(CPU cpu) {
-    //addDebugStack('LD_A_DE', cpu);
-
     cpu.registers.a =
         cpu.getUnsignedByte(cpu.registers.getRegisterPairSP(Registers.de));
   }
 
   static void LD_BC_A(CPU cpu) {
-    //addDebugStack('LD_BC_A', cpu);
-
     cpu.mmu.writeByte(
         cpu.registers.getRegisterPairSP(Registers.bc), cpu.registers.a);
   }
 
   static void LD_DE_A(CPU cpu) {
-    //addDebugStack('LD_DE_A', cpu);
-
     cpu.mmu.writeByte(
         cpu.registers.getRegisterPairSP(Registers.de), cpu.registers.a);
   }
@@ -82,8 +67,6 @@ class Instructions {
   }
 
   static void ADD_SP_n(CPU cpu) {
-    //addDebugStack('ADD_SP_n', cpu);
-
     int offset = cpu.nextSignedBytePC();
     int nsp = (cpu.sp + offset);
 
@@ -112,8 +95,6 @@ class Instructions {
   }
 
   static void CCF(CPU cpu) {
-    //addDebugStack('CCF', cpu);
-
     cpu.registers.f = (cpu.registers.f & Registers.carryFlag) != 0
         ? (cpu.registers.f & Registers.zeroFlag)
         : ((cpu.registers.f & Registers.zeroFlag) | Registers.carryFlag);
@@ -132,8 +113,6 @@ class Instructions {
   }
 
   static void LDHL_SP_n(CPU cpu) {
-    //addDebugStack('LDHL_SP_n', cpu);
-
     int offset = cpu.nextSignedBytePC();
     int nsp = (cpu.sp + offset);
 
@@ -152,8 +131,6 @@ class Instructions {
   }
 
   static void CPL(CPU cpu) {
-    //addDebugStack('CPL', cpu);
-
     cpu.registers.a = (~cpu.registers.a) & 0xFF;
     cpu.registers.f =
         (cpu.registers.f & (Registers.carryFlag | Registers.zeroFlag)) |
@@ -162,27 +139,19 @@ class Instructions {
   }
 
   static void LD_FFn_A(CPU cpu) {
-    //addDebugStack('LD_FFn_A', cpu);
-
     cpu.mmu.writeByte(0xFF00 | cpu.nextUnsignedBytePC(), cpu.registers.a);
   }
 
   static void LDH_FFC_A(CPU cpu) {
-    //addDebugStack('LDH_FFC_A', cpu);
-
     cpu.mmu.writeByte(0xFF00 | (cpu.registers.c & 0xFF), cpu.registers.a);
   }
 
   static void LD_A_nn(CPU cpu) {
-    //addDebugStack('LD_A_nn', cpu);
-
     int nn = cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8);
     cpu.registers.a = cpu.getUnsignedByte(nn);
   }
 
   static void LD_A_HLI(CPU cpu) {
-    //addDebugStack('LD_A_HLI', cpu);
-
     cpu.registers.a = cpu.getUnsignedByte(
         cpu.registers.getRegisterPairSP(Registers.hl) & 0xFFFF);
     cpu.registers.setRegisterPairSP(Registers.hl,
@@ -190,8 +159,6 @@ class Instructions {
   }
 
   static void LD_HLI_A(CPU cpu) {
-    //addDebugStack('LD_HLI_A', cpu);
-
     cpu.mmu.writeByte(cpu.registers.getRegisterPairSP(Registers.hl) & 0xFFFF,
         cpu.registers.a);
     cpu.registers.setRegisterPairSP(Registers.hl,
@@ -199,8 +166,6 @@ class Instructions {
   }
 
   static void LD_HLD_A(CPU cpu) {
-    //addDebugStack('LD_HLD_A', cpu);
-
     int hl = cpu.registers.getRegisterPairSP(Registers.hl);
     cpu.mmu.writeByte(hl, cpu.registers.a);
 
@@ -208,8 +173,6 @@ class Instructions {
   }
 
   static void STOP(CPU cpu) {
-    //addDebugStack('STOP', cpu);
-
     NOP(cpu);
   }
 
@@ -235,8 +198,6 @@ class Instructions {
   }
 
   static void CBPrefix(CPU cpu) {
-    //addDebugStack('CBPrefix', cpu);
-
     int op = cpu.getUnsignedByte(cpu.pc++);
     int reg = op & 0x7;
     int data = cpu.registers.getRegister(reg) & 0xFF;
@@ -431,8 +392,6 @@ class Instructions {
   }
 
   static void DEC_rr(CPU cpu, int op) {
-    //addDebugStack('DEC_rr', cpu);
-
     int pair = (op >> 4) & 0x3;
     int o = cpu.registers.getRegisterPairSP(pair);
     cpu.registers.setRegisterPairSP(pair, o - 1);
@@ -575,8 +534,6 @@ class Instructions {
   }
 
   static void RET_c(CPU cpu, int op) {
-    //addDebugStack('RET_c', cpu);
-
     if (cpu.registers.getFlag(0x4 | ((op >> 3) & 0x7))) {
       cpu.pc =
           (cpu.getUnsignedByte(cpu.sp + 1) << 8) | cpu.getUnsignedByte(cpu.sp);
@@ -596,14 +553,10 @@ class Instructions {
   }
 
   static void LDH_FFnn(CPU cpu) {
-    //addDebugStack('LDH_FFnn', cpu);
-
     cpu.registers.a = cpu.getUnsignedByte(0xFF00 | cpu.nextUnsignedBytePC());
   }
 
   static void JR_c_e(CPU cpu, int op) {
-    //addDebugStack('JR_c_e', cpu);
-
     int e = cpu.nextSignedBytePC();
 
     if (cpu.registers.getFlag((op >> 3) & 0x7)) {
@@ -665,16 +618,12 @@ class Instructions {
   }
 
   static void JR_e(CPU cpu) {
-    //addDebugStack('JR_e', cpu);
-
     int e = cpu.nextSignedBytePC();
     cpu.pc += e;
     cpu.tick(4);
   }
 
   static void OR(CPU cpu, int n) {
-    //addDebugStack('OR', cpu);
-
     cpu.registers.a |= n;
     cpu.registers.f = 0;
     if (cpu.registers.a == 0) {
@@ -683,22 +632,16 @@ class Instructions {
   }
 
   static void OR_r(CPU cpu, int op) {
-    //addDebugStack('OR_r', cpu);
-
     OR(cpu, cpu.registers.getRegister(op & 0x7) & 0xFF);
   }
 
   static void OR_n(CPU cpu) {
-    //addDebugStack('OR_n', cpu);
-
     int n = cpu.nextUnsignedBytePC();
 
     OR(cpu, n);
   }
 
   static void XOR_r(CPU cpu, int op) {
-    //addDebugStack('XOR_r', cpu);
-
     cpu.registers.a =
         (cpu.registers.a ^ cpu.registers.getRegister(op & 0x7)) & 0xFF;
     cpu.registers.f = 0;
@@ -709,8 +652,6 @@ class Instructions {
   }
 
   static void AND_r(CPU cpu, int op) {
-    //addDebugStack('AND_r', cpu);
-
     cpu.registers.a =
         (cpu.registers.a & cpu.registers.getRegister(op & 0x7)) & 0xFF;
     cpu.registers.f = Registers.halfCarryFlag;
@@ -761,22 +702,16 @@ class Instructions {
   }
 
   static void ADD_r(CPU cpu, int op) {
-    //addDebugStack('ADD_r', cpu);
-
     int n = cpu.registers.getRegister(op & 0x7) & 0xFF;
     ADD(cpu, n);
   }
 
   static void ADD_n(CPU cpu) {
-    //addDebugStack('ADD_n', cpu);
-
     int n = cpu.nextUnsignedBytePC();
     ADD(cpu, n);
   }
 
   static void SUB(CPU cpu, int n) {
-    //addDebugStack('SUB', cpu);
-
     cpu.registers.f = Registers.subtractFlag;
     if ((cpu.registers.a & 0xf) - (n & 0xf) < 0) {
       cpu.registers.f |= Registers.halfCarryFlag;
@@ -794,24 +729,18 @@ class Instructions {
   }
 
   static void SUB_r(CPU cpu, int op) {
-    //addDebugStack('SUB_r', cpu);
-
     int n = cpu.registers.getRegister(op & 0x7) & 0xFF;
 
     SUB(cpu, n);
   }
 
   static void SUB_n(CPU cpu) {
-    //addDebugStack('SUB_n', cpu);
-
     int n = cpu.nextUnsignedBytePC();
 
     SUB(cpu, n);
   }
 
   static void SBC_n(CPU cpu) {
-    //addDebugStack('SBC_n', cpu);
-
     int val = cpu.nextUnsignedBytePC();
     int carry = ((cpu.registers.f & Registers.carryFlag) != 0 ? 1 : 0);
     int n = val + carry;
@@ -835,14 +764,10 @@ class Instructions {
   }
 
   static void JP_HL(CPU cpu) {
-    //addDebugStack('JP_HL', cpu);
-
     cpu.pc = cpu.registers.getRegisterPairSP(Registers.hl) & 0xFFFF;
   }
 
   static void ADD_HL_rr(CPU cpu, int op) {
-    //addDebugStack('ADD_HL_rr', cpu);
-
     // Z is not affected is set if carry out of bit 11; reset otherwise
     // N is reset is set if carry from bit 15; reset otherwise
     int pair = (op >> 4) & 0x3;
@@ -880,28 +805,20 @@ class Instructions {
   }
 
   static void CP_n(CPU cpu) {
-    //addDebugStack('CP_n', cpu);
-
     CP(cpu, cpu.nextUnsignedBytePC());
   }
 
   static void CP_rr(CPU cpu, int op) {
-    //addDebugStack('CP_rr', cpu);
-
     CP(cpu, cpu.registers.getRegister(op & 0x7) & 0xFF);
   }
 
   static void INC_rr(CPU cpu, int op) {
-    //addDebugStack('INC_rr', cpu);
-
     int pair = (op >> 4) & 0x3;
     int o = cpu.registers.getRegisterPairSP(pair) & 0xFFFF;
     cpu.registers.setRegisterPairSP(pair, o + 1);
   }
 
   static void DEC_r(CPU cpu, int op) {
-    //addDebugStack('DEC_r', cpu);
-
     int reg = (op >> 3) & 0x7;
     int a = cpu.registers.getRegister(reg) & 0xFF;
 
@@ -914,8 +831,6 @@ class Instructions {
   }
 
   static void INC_r(CPU cpu, int op) {
-    //addDebugStack('INC_r', cpu);
-
     int reg = (op >> 3) & 0x7;
     int a = cpu.registers.getRegister(reg) & 0xFF;
 
@@ -944,15 +859,11 @@ class Instructions {
   }
 
   static void JP_nn(CPU cpu) {
-    //addDebugStack('JP_nn', cpu);
-
     cpu.pc = (cpu.nextUnsignedBytePC()) | (cpu.nextUnsignedBytePC() << 8);
     cpu.tick(4);
   }
 
   static void RETI(CPU cpu) {
-    //addDebugStack('RETI', cpu);
-
     cpu.interruptsEnabled = true;
     cpu.pc =
         (cpu.getUnsignedByte(cpu.sp + 1) << 8) | cpu.getUnsignedByte(cpu.sp);
@@ -961,8 +872,6 @@ class Instructions {
   }
 
   static void LD_a16_SP(CPU cpu) {
-    //addDebugStack('LD_a16_SP', cpu);
-
     int pos = ((cpu.nextUnsignedBytePC()) | (cpu.nextUnsignedBytePC() << 8));
     cpu.mmu.writeByte(pos + 1, (cpu.sp & 0xFF00) >> 8);
     cpu.mmu.writeByte(pos, (cpu.sp & 0x00FF));

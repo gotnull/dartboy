@@ -430,7 +430,6 @@ class Memory {
     } else if (address == MemoryRegisters.nr52) {
       int reg = registers[MemoryRegisters.nr52] & 0x80;
 
-      // TODO <ADD CODE HERE>
       // if(cpu.sound.channel1.isPlaying){reg |= 0x01};
       // if(cpu.sound.channel2.isPlaying){reg |= 0x02};
       // if(cpu.sound.channel3.isPlaying){reg |= 0x04};

@@ -20,7 +20,7 @@
 | Test | Status |
 |----------|----------|
 | cgb_sound      | ❌   |
-| cpu_instrs     | ⏳ (1 out of 11 failingR)     |
+| cpu_instrs     | ⏳ (1 out of 11 failing)     |
 | instr_timing   | ❌     |
 | interrupt_time | ❌   |
 | mem_timing     | ❌     |

@@ -59,7 +59,8 @@ class MainScreenState extends State<MainScreen> {
     _resetEmulator();
 
     // Load from assets
-    ByteData romData = await rootBundle.load('assets/roms/cpu_instrs.gb');
+    ByteData romData =
+        await rootBundle.load('assets/roms/blargg/cpu_instrs/cpu_instrs.gb');
     Uint8List romBytes = romData.buffer.asUint8List();
 
     if (!mounted) return;

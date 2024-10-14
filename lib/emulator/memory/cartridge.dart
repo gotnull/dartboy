@@ -52,7 +52,7 @@ class Cartridge {
   /// In CGB cartridges the upper bit is used to enable CGB functions. This is required, otherwise the CGB switches itself into Non-CGB-Mode.
   ///
   /// There are two different CGB modes 80h Game supports CGB functions, but works on old gameboys also, C0h Game works on CGB only.
-  GameboyType gameboyType = GameboyType.classic;
+  GameboyType gameboyType = GameboyType.color;
 
   /// SGB mode indicates if the game has super gameboy features
   bool superGameboy = false;

@@ -6,9 +6,6 @@ class MBC2 extends MBC {
   @override
   void writeByte(int address, int value) {
     address &= 0xFFFF;
-
-    // TODO <ADD CODE HERE>
-
     super.writeByte(address, value);
   }
 }

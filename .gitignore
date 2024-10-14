@@ -36,6 +36,10 @@ build/
 *.out
 *.app
 
+# Roms :/
+*.gb
+*.gbc
+
 wgbc/\.vs/
 
 *.wav
