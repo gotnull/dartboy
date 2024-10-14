@@ -13,7 +13,7 @@ class DartBoy extends StatelessWidget {
     return MaterialApp(
       title: 'GBC',
       theme: ThemeData(primarySwatch: Colors.blue),
-      home: const MainScreen(title: 'GBC', key: Key('gbc')),
+      home: const MainScreen(title: 'GBC', key: Key("gbc")),
       debugShowCheckedModeBanner: false,
       showPerformanceOverlay: false,
       showSemanticsDebugger: false,

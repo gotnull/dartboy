@@ -230,7 +230,7 @@ class Memory {
       return readIO(address - MemoryAddresses.ioStart);
     }
 
-    throw Exception('Trying to access invalid address.');
+    throw Exception("Trying to access invalid address.");
   }
 
   /// Write data into the IO section of memory space.
@@ -282,7 +282,7 @@ class Memory {
     // Start H-DMA transfer
     else if (address == MemoryRegisters.hdma) {
       if (cpu.cartridge.gameboyType != GameboyType.classic) {
-        // print('Not possible to used H-DMA transfer on GB classic.');
+        // print("Not possible to used H-DMA transfer on GB classic.");
 
         // Get the configuration of the H-DMA transfer
         int length = ((value & 0x7f) + 1) * 0x10;
@@ -296,7 +296,7 @@ class Memory {
           registers[MemoryRegisters.hdma] = (length ~/ 0x10 - 1) & 0xFF;
         } else {
           if (dma != null) {
-            // print('Terminated DMA from ' + source.toString() + '-' + dest.toString() + ', ' + length.toString() + ' remaining.');
+            // print("Terminated DMA from " + source.toString() + "-" + dest.toString() + ", " + length.toString() + " remaining.");
           }
 
           // General DMA

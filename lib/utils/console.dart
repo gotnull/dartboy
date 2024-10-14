@@ -12,10 +12,10 @@ class Console {
   /// Build a string to represent an object.
   static String build(dynamic obj, {int level = 0}) {
     try {
-      JsonEncoder encoder = const JsonEncoder.withIndent('   ');
+      JsonEncoder encoder = const JsonEncoder.withIndent("   ");
       return encoder.convert(obj);
     } catch (e) {
-      print('Invalid JSON.');
+      print("Invalid JSON.");
     }
 
     return obj.toString();
@@ -37,8 +37,8 @@ class Console {
 
   static void logToFile(String message) {
     if (logCounter < logLimit) {
-      final logFile = File('cpu_log.txt');
-      logFile.writeAsStringSync('$message\n', mode: FileMode.append);
+      final logFile = File("cpu_log.txt");
+      logFile.writeAsStringSync("$message\n", mode: FileMode.append);
       logCounter++;
     }
   }

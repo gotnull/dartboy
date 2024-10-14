@@ -43,7 +43,7 @@ class Emulator {
   /// Load a ROM from a file and create the HW components for the emulator.
   void loadROM(Uint8List data) {
     if (state != EmulatorState.waiting) {
-      print('Emulator should be reset to load ROM.');
+      print("Emulator should be reset to load ROM.");
       return;
     }
 
@@ -59,17 +59,16 @@ class Emulator {
 
   /// Print some information about the ROM file loaded into the emulator.
   void printCartridgeInfo() {
-    print('Cartridge info:');
-    print('Title: ${cpu?.cartridge.name}');
-    print('ROM Size: ${cpu?.cartridge.size}k');
-    print('ROM Banks: ${cpu?.cartridge.romBanks}');
-    print('RAM Size: ${cpu?.cartridge.getRamSize()}');
-    print('Cartridge Type: ${cpu?.cartridge.type}');
-    print('GB: ${cpu?.cartridge.gameboyType}');
-    print('SGB: ${cpu?.cartridge.superGameboy}');
+    print("Cartridge info:");
+    print("Title: ${cpu?.cartridge.name}");
+    print("ROM Size: ${cpu?.cartridge.size}k");
+    print("ROM Banks: ${cpu?.cartridge.romBanks}");
+    print("RAM Size: ${cpu?.cartridge.getRamSize()}");
+    print("Cartridge Type: ${cpu?.cartridge.type}");
+    print("GB: ${cpu?.cartridge.gameboyType}");
+    print("SGB: ${cpu?.cartridge.superGameboy}");
     print(
-      'Manufacturer Code: ${cpu?.cartridge.cartManufacturerCode.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}',
-    );
+        "Manufacturer Code: ${cpu?.cartridge.cartManufacturerCode.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}");
   }
 
   /// Reset the emulator, stop running the code and unload the cartridge
@@ -81,7 +80,7 @@ class Emulator {
   /// Do a single step in the cpu, set it to debug mode, step and then reset.
   void debugStep() {
     if (state != EmulatorState.ready) {
-      print('Emulator not ready, cannot step.');
+      print("Emulator not ready, cannot step.");
       return;
     }
 
@@ -94,7 +93,7 @@ class Emulator {
   /// Run the emulation at full speed.
   void run() {
     if (state != EmulatorState.ready) {
-      print('Emulator not ready, cannot run.');
+      print("Emulator not ready, cannot run.");
       return;
     }
 
@@ -153,7 +152,7 @@ class Emulator {
   /// Pause the emulation
   void pause() {
     if (state != EmulatorState.running) {
-      print('Emulator not running cannot be paused');
+      print("Emulator not running cannot be paused");
       return;
     }
 

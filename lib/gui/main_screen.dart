@@ -59,8 +59,10 @@ class MainScreenState extends State<MainScreen> {
     _resetEmulator();
 
     // Load from assets
-    ByteData romData =
-        await rootBundle.load('assets/roms/blargg/cpu_instrs/cpu_instrs.gb');
+    ByteData romData = await rootBundle.load(
+      "assets/roms/blargg/cpu_instrs/cpu_instrs.gb",
+    );
+
     Uint8List romBytes = romData.buffer.asUint8List();
 
     if (!mounted) return;
@@ -157,7 +159,7 @@ class MainScreenState extends State<MainScreen> {
                 ),
                 child: const AspectRatio(
                   aspectRatio: 160 / 144, // Gameboy screen resolution
-                  child: LCDWidget(key: Key('lcd')),
+                  child: LCDWidget(key: Key("lcd")),
                 ),
               ),
             ),

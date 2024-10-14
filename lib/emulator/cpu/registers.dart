@@ -140,7 +140,7 @@ class Registers {
       return cpu.mmu.readByte(getRegisterPair(hl));
     }
 
-    throw Exception('Unknown register address getRegister().');
+    throw Exception("Unknown register address getRegister().");
   }
 
   /// Alters the byte value contained in a register, r is the register id as encoded by opcode.
@@ -182,7 +182,7 @@ class Registers {
       return (a << 8) | f;
     }
 
-    throw Exception('Unknown register pair address getRegisterPair().');
+    throw Exception("Unknown register pair address getRegisterPair().");
   }
 
   /// Fetches the world value of a registers pair, r is the register id as encoded by opcode.
@@ -202,7 +202,7 @@ class Registers {
       return cpu.sp;
     }
 
-    throw Exception('Unknown register pair address getRegisterPairSP().');
+    throw Exception("Unknown register pair address getRegisterPairSP().");
   }
 
   int popByteSP() {

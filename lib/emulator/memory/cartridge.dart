@@ -113,22 +113,22 @@ class Cartridge {
   /// Create a the memory controller of the cartridge.
   MMU createController(CPU cpu) {
     if (type == CartridgeType.rom) {
-      print('Created basic MMU unit.');
+      print("Created basic MMU unit.");
       return MMU(cpu);
     } else if (type == CartridgeType.mbc1 ||
         type == CartridgeType.mbc1Ram ||
         type == CartridgeType.mbc1RamBatt) {
-      print('Created MBC1 unit.');
+      print("Created MBC1 unit.");
       return MBC1(cpu);
     } else if (type == CartridgeType.mbc2 || type == CartridgeType.mbc2Batt) {
-      print('Created MBC2 unit.');
+      print("Created MBC2 unit.");
       return MBC2(cpu);
     } else if (type == CartridgeType.mbc3 ||
         type == CartridgeType.mbc3Ram ||
         type == CartridgeType.mbc3RamBatt ||
         type == CartridgeType.mbc3TimerBatt ||
         type == CartridgeType.mbc3TimerRamBatt) {
-      print('Created MBC3 unit.');
+      print("Created MBC3 unit.");
       return MBC3(cpu);
     } else if (type == CartridgeType.mbc5 ||
         type == CartridgeType.mbc5Ram ||
@@ -136,12 +136,12 @@ class Cartridge {
         type == CartridgeType.mbc5Rumble ||
         type == CartridgeType.mbc5RumbleSram ||
         type == CartridgeType.mbc5RumbleSramBatt) {
-      print('Created MBC5 unit.');
+      print("Created MBC5 unit.");
       return MBC5(cpu);
     }
 
     // If none of the cases match, throw an exception
-    throw Exception('Unsupported cartridge type: $type');
+    throw Exception("Unsupported cartridge type: $type");
   }
 
   /// Checks if the cartridge has a internal battery to keep the RAM state.

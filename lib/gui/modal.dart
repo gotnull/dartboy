@@ -22,7 +22,7 @@ class Modal {
                     Navigator.pop(context);
                     onCancel();
                   },
-                  child: const Text('OK'),
+                  child: const Text("OK"),
                 )
               ],
               content: Text(message));

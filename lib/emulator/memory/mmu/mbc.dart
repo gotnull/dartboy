@@ -36,7 +36,7 @@ class MBC extends MMU {
   /// Load the state of the internal RAM of the cartridge from file.
   void load(File file) {
     if (!cpu.cartridge.hasBattery()) {
-      throw Exception('Cartridge has no battery.');
+      throw Exception("Cartridge has no battery.");
     }
 
     int length = cartRam.length;
@@ -44,14 +44,14 @@ class MBC extends MMU {
     cartRam = file.readAsBytesSync();
 
     if (length != cartRam.length) {
-      throw Exception('Loaded invalid cartridge RAM file.');
+      throw Exception("Loaded invalid cartridge RAM file.");
     }
   }
 
   /// Save the state of the internal RAM of the cartridge to file.
   void save(File file) {
     if (!cpu.cartridge.hasBattery()) {
-      throw Exception('Cartridge has no battery.');
+      throw Exception("Cartridge has no battery.");
     }
 
     file.writeAsBytes(cartRam, flush: true, mode: FileMode.write);
