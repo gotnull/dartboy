@@ -11,33 +11,28 @@
   - [ ] Audio Support
   - [ ] Fix register signed data results.
 
-<img src="https://raw.githubusercontent.com/tentone/dartboy/master/readme/pokemon.png" width="250"><img src="https://raw.githubusercontent.com/tentone/dartboy/master/readme/tetris.png" width="250">
-
-<img src="https://raw.githubusercontent.com/tentone/dartboy/master/readme/web.png" width="250"><img src="https://raw.githubusercontent.com/tentone/dartboy/master/readme/android.png" width="150"><img src="https://raw.githubusercontent.com/tentone/dartboy/master/readme/windows.png" width="250">
-
 # [Blargg's test](https://github.com/retrio/gb-test-roms)
 
 | Test | Status |
 |----------|----------|
-| cgb_sound      | ❌   |
-| 01-special.gb | ✅   |
-| 02-interrupts.gb | ❌   |
-| 03-op sp,hl.gb | ✅   |
-| 04-op r,imm.gb | ✅   |
-| 05-op rp.gb | ✅   |
-| 06-ld r,r.gb | ✅   |
-| 07-jr,jp,call,ret,rst.gb | ✅   |
-| 08-misc instrs.gb | ✅   |
-| 09-op r,r.gb | ✅   |
-| 10-bit ops.gb | ✅   |
-| 11-op a,(hl).gb | ✅   |
-| instr_timing   | ❌     |
-| interrupt_time | ❌   |
-| mem_timing     | ❌     |
-| mem_timing-2   | ❌     |
-| oam_bug        | ❌     |
-| halt_bug.gb    | ❌     |
-
+| cgb_sound | ❌ |
+| 01-special.gb | ✅ |
+| 02-interrupts.gb | ❌ |
+| 03-op sp,hl.gb | ✅ |
+| 04-op r,imm.gb | ✅ |
+| 05-op rp.gb | ✅ |
+| 06-ld r,r.gb | ✅ |
+| 07-jr,jp,call,ret,rst.gb | ✅ |
+| 08-misc instrs.gb | ✅ |
+| 09-op r,r.gb | ✅ |
+| 10-bit ops.gb | ✅ |
+| 11-op a,(hl).gb | ✅ |
+| instr_timing | ❌ |
+| interrupt_time | ❌ |
+| mem_timing | ❌ |
+| mem_timing-2 | ❌ |
+| oam_bug | ❌ |
+| halt_bug.gb | ❌ |
 
 ### Run the Emulator
 
@@ -49,8 +44,6 @@
 ```bash
 flutter run --no-sound-null-safety
 ```
-
-
 
 ### Web
 
@@ -68,8 +61,6 @@ flutter pub upgrade
 ```bash
 flutter pub global run webdev serve
 ```
-
-
 
 ### Desktop
 
@@ -89,8 +80,6 @@ set ENABLE_FLUTTER_DESKTOP=true
 flutter devices
 ```
 
-
-
 ### Resources
 
 - [GameBoy CPU Manual](http://marc.rawer.de/Gameboy/Docs/GBCPUman.pdf)
@@ -101,8 +90,6 @@ flutter devices
 - [Flutter desktop plugins (file chooser)](https://github.com/google/flutter-desktop-embedding/tree/master/plugins)
 - [Game boy test roms](https://github.com/retrio/gb-test-roms)
 - [The Ultimate Game Boy Talk (33c3)](https://www.youtube.com/watch?v=HyzD8pNlpwI)
-
-
 
 ### License
 
