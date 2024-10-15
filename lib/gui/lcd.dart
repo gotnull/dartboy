@@ -45,19 +45,27 @@ class LCDPainter extends CustomPainter {
 
     drawing = true;
 
-    int scale = 4; // Scale factor for larger display
     int width = PPU.lcdWidth;
     int height = PPU.lcdHeight;
 
+    // Calculate the scale factor based on the available window size
+    double scaleX = size.width / width;
+    double scaleY = size.height / height;
+
+    // Use the smaller of the two scale factors to maintain aspect ratio
+    double scale = scaleX < scaleY ? scaleX : scaleY;
+
     for (int x = 0; x < width; x++) {
       for (int y = 0; y < height; y++) {
-        Paint paint = Paint()..style = PaintingStyle.fill;
+        Paint paint = Paint()
+          ..style = PaintingStyle.fill
+          ..isAntiAlias = false;
 
         // Safely access the current pixel data
         int colorValue = cpu.ppu.current[x + y * width];
         paint.color = ColorConverter.toColor(colorValue);
 
-        // Draw each pixel as a scaled-up rectangle
+        // Draw each pixel as a scaled-up rectangle based on the window size
         Rect pixelRect = Rect.fromLTWH(
           (x * scale).toDouble(),
           (y * scale).toDouble(),

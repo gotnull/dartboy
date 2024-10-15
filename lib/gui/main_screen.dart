@@ -147,555 +147,557 @@ class MainScreenState extends State<MainScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Row(
-        children: [
-          // Left side: LCD display
-          Expanded(
-            flex: 3,
-            child: Center(
-              child: Container(
-                margin: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.white),
-                ),
-                child: const AspectRatio(
-                  aspectRatio: 160 / 144, // Gameboy screen resolution
-                  child: LCDWidget(key: Key("lcd")),
+      body: SizedBox(
+        child: Row(
+          children: [
+            // Left side: LCD display
+            Expanded(
+              flex: 3,
+              child: Center(
+                child: Container(
+                  margin: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.white),
+                  ),
+                  child: const AspectRatio(
+                    aspectRatio: 160 / 144, // Gameboy screen resolution
+                    child: LCDWidget(key: Key("lcd")),
+                  ),
                 ),
               ),
             ),
-          ),
 
-          // Right side: Debug controls and emulator info
-          Expanded(
-            flex: 2,
-            child: Container(
-              padding: const EdgeInsets.all(
-                8.0,
-              ), // Add padding inside the border
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: Colors.white,
-                ), // Set border color and thickness
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'HUD',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontFamily: 'ProggyClean',
-                      fontSize: 18,
-                    ),
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 4.0),
-                  ),
-                  // Emulator controls (Load, Pause, Run, Reset)
-                  SizedBox(
-                    width: double.infinity,
-                    child: Container(
-                      padding: const EdgeInsets.all(
-                          8.0), // Add padding inside the border
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Colors.white,
-                        ), // Set border color and thickness
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          customButton(
-                            label: 'Debug',
-                            onPressed: () {
-                              _debugFile();
-                            },
-                          ),
-                          customButton(
-                            label: 'Load',
-                            onPressed: () {
-                              _loadFile();
-                            },
-                          ),
-                          customButton(
-                            label: 'Run',
-                            onPressed: () {
-                              _runEmulator();
-                            },
-                          ),
-                          customButton(
-                            label: 'Pause',
-                            onPressed: () {
-                              _pauseEmulator();
-                            },
-                          ),
-                          customButton(
-                            label: 'Reset',
-                            onPressed: () {
-                              _resetEmulator();
-                            },
-                          ),
-                        ],
+            // Right side: Debug controls and emulator info
+            Expanded(
+              flex: 2,
+              child: Container(
+                padding: const EdgeInsets.all(
+                  8.0,
+                ), // Add padding inside the border
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Colors.white,
+                  ), // Set border color and thickness
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'HUD',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontFamily: 'ProggyClean',
+                        fontSize: 18,
                       ),
                     ),
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 4.0),
-                  ),
-                  // Debug information (FPS, cycles, speed, registers)
-                  Expanded(
-                    flex: 1,
-                    child: Container(
-                      padding: const EdgeInsets.all(
-                        8.0,
-                      ), // Add padding inside the border
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Colors.white,
-                        ), // Set border color and thickness
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 4.0),
+                    ),
+                    // Emulator controls (Load, Pause, Run, Reset)
+                    SizedBox(
+                      width: double.infinity,
+                      child: Container(
+                        padding: const EdgeInsets.all(
+                            8.0), // Add padding inside the border
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Colors.white,
+                          ), // Set border color and thickness
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            customButton(
+                              label: 'Debug',
+                              onPressed: () {
+                                _debugFile();
+                              },
+                            ),
+                            customButton(
+                              label: 'Load',
+                              onPressed: () {
+                                _loadFile();
+                              },
+                            ),
+                            customButton(
+                              label: 'Run',
+                              onPressed: () {
+                                _runEmulator();
+                              },
+                            ),
+                            customButton(
+                              label: 'Pause',
+                              onPressed: () {
+                                _pauseEmulator();
+                              },
+                            ),
+                            customButton(
+                              label: 'Reset',
+                              onPressed: () {
+                                _resetEmulator();
+                              },
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'cycles: ${MainScreen.emulator.cycles}',
-                            style: const TextStyle(
-                              color: Color.fromARGB(255, 169, 169, 169),
-                              fontFamily: 'ProggyClean',
-                              fontSize: 18,
-                            ),
-                          ),
-                          Text(
-                            'speed: ${MainScreen.emulator.speed}Hz',
-                            style: const TextStyle(
-                              color: Color.fromARGB(255, 169, 169, 169),
-                              fontFamily: 'ProggyClean',
-                              fontSize: 18,
-                            ),
-                          ),
-                          Text(
-                            'FPS: ${MainScreen.emulator.fps.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              color: Color.fromARGB(255, 169, 169, 169),
-                              fontFamily: 'ProggyClean',
-                              fontSize: 18,
-                            ),
-                          ),
-                          const Divider(color: Colors.grey),
-                          if (cpu != null && registers != null) ...[
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  flex: 1,
-                                  child: SizedBox(
-                                    width: double.infinity,
-                                    child: ColoredBox(
-                                      color: Colors.black,
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'PC ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                cpu.pc.toRadixString(16),
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'A ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                registers.a.toRadixString(16),
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'B ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                registers.b.toRadixString(16),
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'D ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                registers.d.toRadixString(16),
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'H ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                registers.h.toRadixString(16),
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'Z ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                '${registers.zeroFlagSet}',
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'H ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                '${registers.halfCarryFlagSet}',
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'IME ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                '${cpu.interruptsEnabled}',
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'IF ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                '${cpu.interruptsEnabled}',
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 1,
-                                  child: SizedBox(
-                                    width: double.infinity,
-                                    child: ColoredBox(
-                                      color: Colors.black,
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'SP ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                cpu.sp.toRadixString(16),
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'F ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                '${registers.f}',
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'C ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                '${registers.c}',
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'E ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                '${registers.e}',
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'L ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                '${registers.l}',
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'N ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                '${registers.subtractFlagSet}',
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'C ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                '${registers.carryFlagSet}',
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Row(
-                                            children: [
-                                              const Text(
-                                                'IE ',
-                                                style: TextStyle(
-                                                  color: Color.fromARGB(
-                                                      255, 169, 169, 169),
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                              Text(
-                                                '${registers.carryFlagSet}',
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontFamily: 'ProggyClean',
-                                                  fontSize: 18,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ] else
-                            const Text(
-                              'No register data available',
-                              style: TextStyle(
-                                color: Colors.red,
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 4.0),
+                    ),
+                    // Debug information (FPS, cycles, speed, registers)
+                    Expanded(
+                      flex: 1,
+                      child: Container(
+                        padding: const EdgeInsets.all(
+                          8.0,
+                        ), // Add padding inside the border
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Colors.white,
+                          ), // Set border color and thickness
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'cycles: ${MainScreen.emulator.cycles}',
+                              style: const TextStyle(
+                                color: Color.fromARGB(255, 169, 169, 169),
                                 fontFamily: 'ProggyClean',
                                 fontSize: 18,
                               ),
                             ),
-                        ],
+                            Text(
+                              'speed: ${MainScreen.emulator.speed}Hz',
+                              style: const TextStyle(
+                                color: Color.fromARGB(255, 169, 169, 169),
+                                fontFamily: 'ProggyClean',
+                                fontSize: 18,
+                              ),
+                            ),
+                            Text(
+                              'FPS: ${MainScreen.emulator.fps.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                color: Color.fromARGB(255, 169, 169, 169),
+                                fontFamily: 'ProggyClean',
+                                fontSize: 18,
+                              ),
+                            ),
+                            const Divider(color: Colors.grey),
+                            if (cpu != null && registers != null) ...[
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    flex: 1,
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: ColoredBox(
+                                        color: Colors.black,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'PC ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  cpu.pc.toRadixString(16),
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'A ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  registers.a.toRadixString(16),
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'B ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  registers.b.toRadixString(16),
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'D ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  registers.d.toRadixString(16),
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'H ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  registers.h.toRadixString(16),
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'Z ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${registers.zeroFlagSet}',
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'H ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${registers.halfCarryFlagSet}',
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'IME ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${cpu.interruptsEnabled}',
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'IF ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${cpu.interruptsEnabled}',
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 1,
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: ColoredBox(
+                                        color: Colors.black,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'SP ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  cpu.sp.toRadixString(16),
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'F ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${registers.f}',
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'C ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${registers.c}',
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'E ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${registers.e}',
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'L ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${registers.l}',
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'N ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${registers.subtractFlagSet}',
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'C ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${registers.carryFlagSet}',
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
+                                                const Text(
+                                                  'IE ',
+                                                  style: TextStyle(
+                                                    color: Color.fromARGB(
+                                                        255, 169, 169, 169),
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${registers.carryFlagSet}',
+                                                  style: const TextStyle(
+                                                    color: Colors.green,
+                                                    fontFamily: 'ProggyClean',
+                                                    fontSize: 18,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ] else
+                              const Text(
+                                'No register data available',
+                                style: TextStyle(
+                                  color: Colors.red,
+                                  fontFamily: 'ProggyClean',
+                                  fontSize: 18,
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

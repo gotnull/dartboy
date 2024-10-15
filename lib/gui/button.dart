@@ -14,8 +14,10 @@ Widget customButton({
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(0), // Rectangular button
       ),
-      padding:
-          const EdgeInsets.symmetric(horizontal: 20, vertical: 15), // Padding
+      padding: const EdgeInsets.symmetric(
+        horizontal: 20,
+        vertical: 15,
+      ), // Padding
     ),
     child: Text(
       label,
