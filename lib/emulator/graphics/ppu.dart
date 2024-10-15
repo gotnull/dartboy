@@ -399,10 +399,10 @@ class PPU {
       int addressBase =
           offset + ((y + scrollY ~/ 8) % 32 * 32) + ((x + scrollX ~/ 8) % 32);
 
-      // Add 256 to jump into second tile pattern table
       int tile = tileDataOffset == 0
-          ? (cpu.mmu.readVRAM(addressBase) & 0xFF)
-          : (cpu.mmu.readVRAM(addressBase) + 256);
+          ? (cpu.mmu.readVRAM(addressBase) & 0xFF) // Unsigned
+          : ((cpu.mmu.readVRAM(addressBase) ^ 0x80) +
+              128); // Convert signed tile index to unsigned
 
       int gbcVramBank = 0;
       int gbcPalette = 0;
@@ -464,10 +464,10 @@ class PPU {
       // 32 tiles a row
       int addressBase = tileMapOffset + (x + y * 32);
 
-      // add 256 to jump into second tile pattern table
       int tile = tileDataOffset == 0
-          ? cpu.mmu.readVRAM(addressBase) & 0xff
-          : cpu.mmu.readVRAM(addressBase) + 256;
+          ? (cpu.mmu.readVRAM(addressBase) & 0xFF) // Unsigned
+          : ((cpu.mmu.readVRAM(addressBase) ^ 0x80) +
+              128); // Convert signed tile index to unsigned
 
       int gbcVramBank = 0;
       bool flipX = false;

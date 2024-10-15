@@ -25,19 +25,19 @@ class Memory {
   static const int romPageSize = 0x4000;
 
   /// Register values contains mostly control flags, mapped from 0xFF00-0xFF7F + HRAM (0xFF80-0xFFFE) + Interrupt Enable Register (0xFFFF)
-  Uint8List registers;
+  late Uint8List registers;
 
   /// OAM (Object Attribute Memory) or (Sprite Attribute Table), mapped from 0xFE00-0xFE9F.
-  Uint8List oam;
+  late Uint8List oam;
 
   /// Video RAM, mapped from 0x8000-0x9FFF.
   /// On the GBC, this bank is switchable 0-1 by writing to 0xFF4F.
-  Uint8List vram;
+  late Uint8List vram;
 
   /// Work RAM, mapped from 0xC000-0xCFFF and 0xD000-0xDFFF.
   ///
   /// On the GBC, this bank is switchable 1-7 by writing to 0xFF07.
-  Uint8List wram;
+  late Uint8List wram;
 
   /// The current page of Video RAM, always multiples of vramPageSize.
   ///
@@ -60,13 +60,7 @@ class Memory {
   /// Used for direct memory copy operations.
   DMA? dma;
 
-  Memory(this.cpu)
-      : registers = Uint8List(0x100), // 256 bytes for registers
-        oam = Uint8List(0xA0), // 160 bytes for OAM
-        vram =
-            Uint8List(vramPageSize * 2), // 16kb for VRAM (2 pages of 8kb each)
-        wram =
-            Uint8List(wramPageSize * 2); // 8kb for WRAM (2 pages of 4kb each)
+  Memory(this.cpu);
 
   /// Initialize the memory, create the data array with the defined size.
   ///

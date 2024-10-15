@@ -60,7 +60,8 @@ class MainScreenState extends State<MainScreen> {
 
     // Load from assets
     ByteData romData = await rootBundle.load(
-      "assets/roms/blargg/cpu_instrs/cpu_instrs.gb",
+      // "assets/roms/blargg/cpu_instrs/cpu_instrs.gb",
+      "assets/roms/tetris_world_dx.gbc",
     );
 
     Uint8List romBytes = romData.buffer.asUint8List();
