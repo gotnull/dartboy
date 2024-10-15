@@ -6,10 +6,14 @@
 - Full support for the Sharp [LR35902](https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html) CPU instruction set.
 - The emulator was built as a learning project and as a challenge, there are still a lot that can be done to improve.
 
-  - [ ] Store battery backed game memory in .sav file.
-  - [ ] MBC2 support
-  - [ ] Audio Support
-  - [ ] Fix register signed data results.
+  - [❌] Store battery backed game memory in .sav file.
+  - [❌] MBC2 support
+  - [❌] Audio Support
+  - [❌] Fix register signed data results.
+
+![Screenshot 2024-10-15 at 4 45 35 pm](https://github.com/user-attachments/assets/d512eb2a-b78e-4ab9-aaa5-dd26747c0ec0)
+![Screenshot 2024-10-15 at 4 46 56 pm](https://github.com/user-attachments/assets/15772943-c4ce-4ce0-85f2-5ef38b3b6774)
+![Screenshot 2024-10-15 at 4 47 53 pm](https://github.com/user-attachments/assets/e787f733-f498-41f6-910a-8939b78f117b)
 
 # [Blargg's test](https://github.com/retrio/gb-test-roms)
 
