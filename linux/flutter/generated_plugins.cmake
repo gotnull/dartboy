@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_linux
   desktop_window
+  gamepads_linux
   screen_retriever
   window_manager
 )

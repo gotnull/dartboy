@@ -55,25 +55,37 @@ class MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _debugFile() async {
-    // Reset the emulator first
-    _resetEmulator();
+    try {
+      // Reset the emulator first
+      _resetEmulator();
 
-    // Load from assets
-    ByteData romData = await rootBundle.load(
-      // "assets/roms/blargg/cpu_instrs/cpu_instrs.gb",
-      "assets/roms/tetris_world_dx.gbc",
-    );
+      // Try loading the asset
+      ByteData romData = await rootBundle.load(
+        "assets/roms/tetris_world_dx.gbc",
+        // "assets/roms/cpu_instrs.gb",
+      );
 
-    Uint8List romBytes = romData.buffer.asUint8List();
+      // If successful, proceed with loading ROM
+      Uint8List romBytes = romData.buffer.asUint8List();
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    MainScreen.emulator.loadROM(romBytes);
-    MainScreen.emulator.state = EmulatorState.ready;
+      MainScreen.emulator.loadROM(romBytes);
+      MainScreen.emulator.state = EmulatorState.ready;
 
-    _startEmulator();
+      _startEmulator();
 
-    setState(() {}); // Trigger UI rebuild after loading ROM
+      setState(() {}); // Trigger UI rebuild after loading ROM
+    } catch (e) {
+      // Handle the case where the file does not exist
+      print('Error: Could not load file. Make sure the asset exists.');
+      Modal.alert(
+        context,
+        'Error',
+        'Error: Could not load the "cpu_instrs.gb" ROM. Make sure the ROM exists in the "assets/roms" folder.',
+        onCancel: () => {},
+      );
+    }
   }
 
   Future<void> _loadFile() async {

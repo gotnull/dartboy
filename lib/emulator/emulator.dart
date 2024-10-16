@@ -3,7 +3,10 @@ import 'dart:typed_data';
 
 import 'package:dartboy/emulator/configuration.dart';
 import 'package:dartboy/emulator/cpu/cpu.dart';
+import 'package:dartboy/emulator/gamepad_map.dart';
 import 'package:dartboy/emulator/memory/cartridge.dart';
+import 'package:dartboy/emulator/memory/gamepad.dart';
+import 'package:gamepads/gamepads.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// Represents the state of the emulator.
@@ -31,16 +34,6 @@ class Emulator {
   int speed = 0;
   int fps = 0;
 
-  /// Press a gamepad button down (update memory register).
-  void buttonDown(int button) {
-    cpu?.buttons[button] = true;
-  }
-
-  /// Release a gamepad button (update memory register).
-  void buttonUp(int button) {
-    cpu?.buttons[button] = false;
-  }
-
   /// Load a ROM from a file and create the HW components for the emulator.
   void loadROM(Uint8List data) {
     if (state != EmulatorState.waiting) {
@@ -56,6 +49,84 @@ class Emulator {
     state = EmulatorState.ready;
 
     printCartridgeInfo();
+
+    print("Available Controllers:");
+    final gamepads = Gamepads.list();
+    gamepads.then((List<GamepadController> controllers) {
+      for (GamepadController controller in controllers) {
+        print("[${controller.id}] ${controller.name}");
+      }
+    });
+
+    Gamepads.events.listen(
+      (GamepadEvent event) => onGamepadEvent(event),
+    );
+  }
+
+  void onGamepadEvent(GamepadEvent event) {
+    _handleGamepadAxisInput(event);
+    _handleGamepadMoveEvent(event);
+  }
+
+  void _handleGamepadAxisInput(GamepadEvent event) {
+    double xAxis = event.key.contains("xAxis") ? event.value : 0.0;
+    double yAxis = event.key.contains("yAxis") ? event.value : 0.0;
+
+    // Reset Up and Down buttons before processing new input
+    cpu?.buttons[Gamepad.up] = false;
+    cpu?.buttons[Gamepad.down] = false;
+
+    // Handle axis input for left, right, up, and down
+    if (xAxis == -1.0) {
+      cpu?.buttons[Gamepad.left] = true;
+      // print("Left button set to true");
+    } else if (xAxis == 1.0) {
+      cpu?.buttons[Gamepad.right] = true;
+      // print("Right button set to true");
+    } else if (yAxis == 1.0) {
+      cpu?.buttons[Gamepad.up] = true;
+      // print("Up button set to true");
+    } else if (yAxis == -1.0) {
+      cpu?.buttons[Gamepad.down] = true;
+      // print("Down button set to true");
+    }
+
+    // Reset Left and Right only if xAxis is neutral
+    if (xAxis == 0.0 && event.key.contains("xAxis")) {
+      cpu?.buttons[Gamepad.left] = false;
+      cpu?.buttons[Gamepad.right] = false;
+      // print("Left and Right buttons reset");
+    }
+
+    // Reset Up and Down if yAxis is neutral
+    if (yAxis == 0.0) {
+      cpu?.buttons[Gamepad.up] = false;
+      cpu?.buttons[Gamepad.down] = false;
+      // print("Up and Down buttons reset");
+    }
+  }
+
+  void _handleGamepadMoveEvent(GamepadEvent event) {
+    // Reset action buttons before processing new input
+    cpu?.buttons[Gamepad.A] = false;
+    cpu?.buttons[Gamepad.B] = false;
+    cpu?.buttons[Gamepad.select] = false;
+    cpu?.buttons[Gamepad.start] = false;
+
+    // Check for each button event and update the state accordingly
+    if (startButton.matches(event)) {
+      cpu?.buttons[Gamepad.start] = true;
+      // print("Start gamepad event");
+    } else if (selectButton.matches(event)) {
+      cpu?.buttons[Gamepad.select] = true;
+      // print("Select gamepad event");
+    } else if (aButton.matches(event)) {
+      cpu?.buttons[Gamepad.B] = true; // B button
+      // print("B gamepad event");
+    } else if (bButton.matches(event)) {
+      cpu?.buttons[Gamepad.A] = true; // A button
+      // print("A gamepad event");
+    }
   }
 
   /// Print some information about the ROM file loaded into the emulator.

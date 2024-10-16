@@ -388,35 +388,58 @@ class Memory {
       return cpu.doubleSpeed ? 0x80 : 0x0;
     } else if (address == MemoryRegisters.gamepad) {
       int reg = registers[MemoryRegisters.gamepad];
-      reg |= 0x0F;
+      reg |= 0x0F; // Set the lower 4 bits to 1 (unpressed state)
 
-      if (reg & 0x10 == 0) {
+      // Handle the directional buttons (right, left, up, down)
+      // print("Up: ${cpu.buttons[Gamepad.up]}");
+      // print("Down: ${cpu.buttons[Gamepad.down]}");
+      // print("Left: ${cpu.buttons[Gamepad.left]}");
+      // print("Right: ${cpu.buttons[Gamepad.right]}");
+
+      if ((reg & 0x10) == 0) {
+        // Check if this is a direction group
         if (cpu.buttons[Gamepad.right]) {
-          reg &= ~0x1;
+          // print("Right button is pressed");
+          reg &= ~0x1; // Clear bit 0 (right)
         }
+
         if (cpu.buttons[Gamepad.left]) {
-          reg &= ~0x2;
+          // print("Left button is pressed");
+          reg &= ~0x2; // Clear bit 1 (left)
         }
+
         if (cpu.buttons[Gamepad.up]) {
-          reg &= ~0x4;
+          // print("Up button is pressed");
+          reg &= ~0x4; // Clear bit 2 (up)
         }
+
         if (cpu.buttons[Gamepad.down]) {
-          reg &= ~0x8;
+          // print("Down button is pressed");
+          reg &= ~0x8; // Clear bit 3 (down)
         }
       }
 
-      if (reg & 0x20 == 0) {
+      // Handle the action buttons (A, B, Select, Start)
+      if ((reg & 0x20) == 0) {
+        // Check if this is an action button group
         if (cpu.buttons[Gamepad.A]) {
-          reg &= ~0x1;
+          // print("A button is pressed");
+          reg &= ~0x1; // Clear bit 0 (A)
         }
+
         if (cpu.buttons[Gamepad.B]) {
-          reg &= ~0x2;
+          // print("B button is pressed");
+          reg &= ~0x2; // Clear bit 1 (B)
         }
+
         if (cpu.buttons[Gamepad.select]) {
-          reg &= ~0x4;
+          // print("Select button is pressed");
+          reg &= ~0x4; // Clear bit 2 (Select)
         }
+
         if (cpu.buttons[Gamepad.start]) {
-          reg &= ~0x8;
+          // print("Start button is pressed");
+          reg &= ~0x8; // Clear bit 3 (Start)
         }
       }
 
