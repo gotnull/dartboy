@@ -140,7 +140,8 @@ class Emulator {
     print("GB: ${cpu?.cartridge.gameboyType}");
     print("SGB: ${cpu?.cartridge.superGameboy}");
     print(
-        "Manufacturer Code: ${cpu?.cartridge.cartManufacturerCode.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}");
+      "Manufacturer Code: ${cpu?.cartridge.cartManufacturerCode.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}",
+    );
 
     windowManager.setTitle(
       'Dart Boy: ${cpu?.cartridge.name}',

@@ -76,9 +76,16 @@ class Cartridge {
     name = String.fromCharCodes(readBytes(0x134, 0x142));
     romType = readByte(0x148);
     ramType = readByte(0x149);
-    gameboyType =
-        readByte(0x143) == 0x80 ? GameboyType.color : GameboyType.classic;
     superGameboy = readByte(0x146) == 0x3;
+
+    int headerValue = readByte(0x143);
+    if (headerValue == 0xC0) {
+      gameboyType = GameboyType.color; // GBC-only game
+    } else if (headerValue == 0x80) {
+      gameboyType = GameboyType.color; // GBC-compatible
+    } else {
+      gameboyType = GameboyType.classic; // Classic GB
+    }
 
     // Calculate the special value used by the CGB boot ROM to colorize some monochrome games.
     int chk = 0;
