@@ -37,7 +37,8 @@ class Emulator {
   /// Load a ROM from a file and create the HW components for the emulator.
   void loadROM(Uint8List data) {
     if (state != EmulatorState.waiting) {
-      print("Emulator should be reset to load ROM.");
+      cpu?.reset();
+      print("Emulator was reset to load ROM.");
       return;
     }
 
