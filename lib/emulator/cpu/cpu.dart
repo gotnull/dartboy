@@ -4,6 +4,7 @@ import 'package:dartboy/emulator/graphics/ppu.dart';
 import 'package:dartboy/emulator/memory/cartridge.dart';
 import 'package:dartboy/emulator/memory/memory_registers.dart';
 import 'package:dartboy/emulator/memory/mmu/mmu.dart';
+import 'package:window_manager/window_manager.dart';
 
 /// CPU class is responsible for the instruction execution, interrupts, and timing of the system.
 ///
@@ -105,6 +106,8 @@ class CPU {
     registers.reset();
     ppu.reset();
     mmu.reset();
+
+    windowManager.setTitle('Dart Boy');
   }
 
   /// Read the next program byte and update the PC value

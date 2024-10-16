@@ -89,12 +89,12 @@ class MainScreenState extends State<MainScreen> {
       _resetEmulator();
       MainScreen.emulator.loadROM(result.files.single.bytes!);
     } else {
-      Modal.alert(
-        context,
-        'Error',
-        'No valid ROM file selected.',
-        onCancel: () => {},
-      );
+      // Modal.alert(
+      //   context,
+      //   'Error',
+      //   'No valid ROM file selected.',
+      //   onCancel: () => {},
+      // );
     }
   }
 
@@ -208,30 +208,35 @@ class MainScreenState extends State<MainScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             customButton(
+                              cpu: cpu,
                               label: 'Debug',
                               onPressed: () {
                                 _debugFile();
                               },
                             ),
                             customButton(
+                              cpu: cpu,
                               label: 'Load',
                               onPressed: () {
                                 _loadFile();
                               },
                             ),
                             customButton(
+                              cpu: cpu,
                               label: 'Run',
                               onPressed: () {
                                 _runEmulator();
                               },
                             ),
                             customButton(
+                              cpu: cpu,
                               label: 'Pause',
                               onPressed: () {
                                 _pauseEmulator();
                               },
                             ),
                             customButton(
+                              cpu: cpu,
                               label: 'Reset',
                               onPressed: () {
                                 _resetEmulator();

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:dartboy/emulator/configuration.dart';
 import 'package:dartboy/emulator/cpu/cpu.dart';
 import 'package:dartboy/emulator/memory/cartridge.dart';
+import 'package:window_manager/window_manager.dart';
 
 /// Represents the state of the emulator.
 ///
@@ -69,10 +70,15 @@ class Emulator {
     print("SGB: ${cpu?.cartridge.superGameboy}");
     print(
         "Manufacturer Code: ${cpu?.cartridge.cartManufacturerCode.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}");
+
+    windowManager.setTitle(
+      'Dart Boy: ${cpu?.cartridge.name}',
+    );
   }
 
   /// Reset the emulator, stop running the code and unload the cartridge
   void reset() {
+    cpu?.reset();
     cpu = null;
     state = EmulatorState.waiting;
   }

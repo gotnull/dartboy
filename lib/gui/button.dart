@@ -1,13 +1,30 @@
+import 'package:dartboy/emulator/cpu/cpu.dart';
+import 'package:dartboy/emulator/emulator.dart';
+import 'package:dartboy/gui/main_screen.dart';
 import 'package:flutter/material.dart';
 
 Widget customButton({
+  required CPU? cpu,
   required String label,
-  required VoidCallback onPressed, // The function to run when pressed
+  VoidCallback? onPressed, // The function to run when pressed
   Color backgroundColor = Colors.blue, // Optional: Background color
   Color textColor = Colors.white, // Optional: Text color
 }) {
+  bool isCartridgeLoaded = cpu != null && cpu.cartridge.data.isNotEmpty;
+
   return ElevatedButton(
-    onPressed: onPressed,
+    onPressed: (label == 'Load' || label == 'Debug')
+        ? onPressed // Always enable Load and Debug
+        : (label == 'Run' &&
+                MainScreen.emulator.state != EmulatorState.running &&
+                isCartridgeLoaded)
+            ? onPressed // Enable Run if not running and cartridge is loaded
+            : (label == 'Pause' &&
+                    MainScreen.emulator.state == EmulatorState.running)
+                ? onPressed // Enable Pause if emulator is running
+                : (label == 'Reset' && isCartridgeLoaded)
+                    ? onPressed // Enable Reset if cartridge is loaded
+                    : null, // Disable other buttons based on conditions
     style: ElevatedButton.styleFrom(
       backgroundColor: backgroundColor,
       foregroundColor: textColor,
