@@ -4,6 +4,7 @@ import 'package:dartboy/emulator/graphics/ppu.dart';
 import 'package:dartboy/emulator/memory/cartridge.dart';
 import 'package:dartboy/emulator/memory/memory_registers.dart';
 import 'package:dartboy/emulator/memory/mmu/mmu.dart';
+import 'package:dartboy/emulator/audio/audio.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// CPU class is responsible for the instruction execution, interrupts, and timing of the system.
@@ -27,6 +28,9 @@ class CPU {
 
   /// PPU handles the graphics display
   late PPU ppu;
+
+  // Audio handles the audio
+  late Audio audio;
 
   /// Whether the CPU is currently halted.
   bool halted;
@@ -81,6 +85,7 @@ class CPU {
     mmu = cartridge.createController(this);
     ppu = PPU(this);
     registers = Registers(this);
+    audio = Audio();
 
     reset();
   }
@@ -106,6 +111,7 @@ class CPU {
     registers.reset();
     ppu.reset();
     mmu.reset();
+    audio.reset();
 
     windowManager.setTitle('Dart Boy');
   }

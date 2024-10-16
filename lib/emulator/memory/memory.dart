@@ -122,7 +122,7 @@ class Memory {
 
     if (value > 0xFF) {
       throw Exception(
-        'Tring to write ${value.toRadixString(16)} (>0xFF) into ${address.toRadixString(16)}.',
+        'Trying to write ${value.toRadixString(16)} (>0xFF) into ${address.toRadixString(16)}.',
       );
     }
 
@@ -231,12 +231,12 @@ class Memory {
   void writeIO(int address, int value) {
     if (value > 0xFF) {
       throw Exception(
-        'Tring to write ${value.toRadixString(16)} (>0xFF) into ${address.toRadixString(16)}.',
+        'Trying to write ${value.toRadixString(16)} (>0xFF) into ${address.toRadixString(16)}.',
       );
     }
     if (address > 0xFF) {
       throw Exception(
-        'Tring to write register ${value.toRadixString(16)} into ${address.toRadixString(16)} (>0xFF).',
+        'Trying to write register ${value.toRadixString(16)} into ${address.toRadixString(16)} (>0xFF).',
       );
     }
 
@@ -308,50 +308,104 @@ class Memory {
       if (cpu.cartridge.gameboyType == GameboyType.color) {
         wramPageStart = Memory.wramPageSize * max(1, value & 0x7);
       }
-    } else if (address == MemoryRegisters.nr14) {
-      if ((registers[MemoryRegisters.nr14] & 0x80) != 0) {
-        //cpu.sound.channel1.restart();
-        value &= 0x7f;
-      }
-    } else if (address == MemoryRegisters.nr10 ||
-        address == MemoryRegisters.nr11 ||
-        address == MemoryRegisters.nr12 ||
-        address == MemoryRegisters.nr13) {
-      //cpu.sound.channel1.update();
-    } else if (address == MemoryRegisters.nr24) {
-      if ((value & 0x80) != 0) {
-        //cpu.sound.channel2.restart();
-        value &= 0x7F;
-      }
-    } else if (address == MemoryRegisters.nr21 ||
-        address == MemoryRegisters.nr22 ||
-        address == MemoryRegisters.nr23) {
-      //cpu.sound.channel2.update();
-    } else if (address == MemoryRegisters.nr34) {
-      if ((value & 0x80) != 0) {
-        //cpu.sound.channel3.restart();
-        value &= 0x7F;
-      }
-    } else if (address == MemoryRegisters.nr30 ||
-        address == MemoryRegisters.nr31 ||
-        address == MemoryRegisters.nr32 ||
-        address == MemoryRegisters.nr33) {
-      //cpu.sound.channel3.update();
-    } else if (address == MemoryRegisters.nr44) {
-      if ((value & 0x80) != 0) {
-        //cpu.sound.channel4.restart();
-        value &= 0x7F;
-      }
-    } else if (address == MemoryRegisters.nr41 ||
-        address == MemoryRegisters.nr42 ||
-        address == MemoryRegisters.nr43) {
-      //cpu.sound.channel4.update();
     }
+
+    // Handle gamepad buttons (directional and action buttons)
+    if (address == MemoryRegisters.gamepad) {
+      int reg = registers[MemoryRegisters.gamepad];
+      reg |= 0x0F; // Set the lower 4 bits to 1 (unpressed state)
+
+      if ((reg & 0x10) == 0) {
+        if (cpu.buttons[Gamepad.right]) {
+          reg &= ~0x1;
+        }
+        if (cpu.buttons[Gamepad.left]) {
+          reg &= ~0x2;
+        }
+        if (cpu.buttons[Gamepad.up]) {
+          reg &= ~0x4;
+        }
+        if (cpu.buttons[Gamepad.down]) {
+          reg &= ~0x8;
+        }
+      }
+
+      if ((reg & 0x20) == 0) {
+        if (cpu.buttons[Gamepad.A]) {
+          reg &= ~0x1;
+        }
+        if (cpu.buttons[Gamepad.B]) {
+          reg &= ~0x2;
+        }
+        if (cpu.buttons[Gamepad.select]) {
+          reg &= ~0x4;
+        }
+        if (cpu.buttons[Gamepad.start]) {
+          reg &= ~0x8;
+        }
+      }
+      registers[address] = reg;
+    }
+
+    // Handle audio registers related to Channel 1 (NR10-NR14)
+    if (address == MemoryRegisters.nr10 || // Sound Mode 1 sweep register
+        address ==
+            MemoryRegisters.nr11 || // Sound Mode 1 length/wave duty register
+        address == MemoryRegisters.nr12 || // Sound Mode 1 envelope register
+        address ==
+            MemoryRegisters.nr13 || // Sound Mode 1 frequency low register
+        address == MemoryRegisters.nr14) {
+      // Sound Mode 1 frequency high register (triggers restart)
+      if (address == MemoryRegisters.nr14 && (value & 0x80) != 0) {
+        cpu.audio.channel1.restart(); // Restart Channel 1 when triggered
+      }
+      cpu.audio.channel1.update(); // Always update the channel after a write
+    }
+    // Handle audio registers related to Channel 2 (NR21-NR24)
+    else if (address ==
+            MemoryRegisters.nr21 || // Sound Mode 2 length/wave duty register
+        address == MemoryRegisters.nr22 || // Sound Mode 2 envelope register
+        address ==
+            MemoryRegisters.nr23 || // Sound Mode 2 frequency low register
+        address == MemoryRegisters.nr24) {
+      // Sound Mode 2 frequency high register
+      if (address == MemoryRegisters.nr24 && (value & 0x80) != 0) {
+        cpu.audio.channel2.restart(); // Restart Channel 2
+      }
+      cpu.audio.channel2.update();
+    }
+    // Handle audio registers related to Channel 3 (NR30-NR34)
+    else if (address == MemoryRegisters.nr30 || // Sound Mode 3 on/off register
+        address == MemoryRegisters.nr31 || // Sound Mode 3 length register
+        address == MemoryRegisters.nr32 || // Sound Mode 3 volume register
+        address ==
+            MemoryRegisters.nr33 || // Sound Mode 3 frequency low register
+        address == MemoryRegisters.nr34) {
+      // Sound Mode 3 frequency high register
+      if (address == MemoryRegisters.nr34 && (value & 0x80) != 0) {
+        cpu.audio.channel3.restart(); // Restart Channel 3
+      }
+      cpu.audio.channel3.update();
+    }
+
+    // Handle audio registers related to Channel 4 (NR41-NR44)
+    else if (address == MemoryRegisters.nr41 || // Sound Mode 4 length register
+        address == MemoryRegisters.nr42 || // Sound Mode 4 envelope register
+        address ==
+            MemoryRegisters.nr43 || // Sound Mode 4 polynomial counter register
+        address == MemoryRegisters.nr44) {
+      // Sound Mode 4 counter/consecutive/initial register
+      if (address == MemoryRegisters.nr44 && (value & 0x80) != 0) {
+        cpu.audio.channel4.restart(); // Restart Channel 4
+      }
+      cpu.audio.channel4.update();
+    }
+
     // OAM DMA transfer
     else if (address == MemoryRegisters.dma) {
       int addressBase = value * 0x100;
 
-      for (int i = 0; i < 0xA0; i++) {
+      for (int i = 0x00; i < 0xA0; i++) {
         writeByte(0xFE00 + i, readByte(addressBase + i));
       }
     } else if (address == MemoryRegisters.div) {
@@ -364,13 +418,11 @@ class Memory {
     } else if (address == MemoryRegisters.serialSc) {
       // Serial transfer starts if the 7th bit is set
       if (value == 0x81) {
-        // Print data passed thought the serial port as character.
+        // Print data passed through the serial port as character.
         if (Configuration.printSerialCharacters) {
           print(String.fromCharCode(registers[MemoryRegisters.serialSb]));
         }
       }
-    } else if (0x30 <= address && address < 0x40) {
-      //cpu.sound.channel3.updateSample(address - 0x30, (byte) value);
     }
 
     registers[address] = value;
@@ -380,7 +432,7 @@ class Memory {
   int readIO(int address) {
     if (address > 0xFF) {
       throw Exception(
-        'Tring to read register from ${address.toRadixString(16)} (>0xFF).',
+        'Trying to read register from ${address.toRadixString(16)} (>0xFF).',
       );
     }
 
@@ -391,68 +443,54 @@ class Memory {
       reg |= 0x0F; // Set the lower 4 bits to 1 (unpressed state)
 
       // Handle the directional buttons (right, left, up, down)
-      // print("Up: ${cpu.buttons[Gamepad.up]}");
-      // print("Down: ${cpu.buttons[Gamepad.down]}");
-      // print("Left: ${cpu.buttons[Gamepad.left]}");
-      // print("Right: ${cpu.buttons[Gamepad.right]}");
-
       if ((reg & 0x10) == 0) {
-        // Check if this is a direction group
         if (cpu.buttons[Gamepad.right]) {
-          // print("Right button is pressed");
-          reg &= ~0x1; // Clear bit 0 (right)
+          reg &= ~0x1;
         }
 
         if (cpu.buttons[Gamepad.left]) {
-          // print("Left button is pressed");
-          reg &= ~0x2; // Clear bit 1 (left)
+          reg &= ~0x2;
         }
 
         if (cpu.buttons[Gamepad.up]) {
-          // print("Up button is pressed");
-          reg &= ~0x4; // Clear bit 2 (up)
+          reg &= ~0x4;
         }
 
         if (cpu.buttons[Gamepad.down]) {
-          // print("Down button is pressed");
-          reg &= ~0x8; // Clear bit 3 (down)
+          reg &= ~0x8;
         }
       }
-
       // Handle the action buttons (A, B, Select, Start)
       if ((reg & 0x20) == 0) {
-        // Check if this is an action button group
         if (cpu.buttons[Gamepad.A]) {
-          // print("A button is pressed");
-          reg &= ~0x1; // Clear bit 0 (A)
+          reg &= ~0x1;
         }
 
         if (cpu.buttons[Gamepad.B]) {
-          // print("B button is pressed");
-          reg &= ~0x2; // Clear bit 1 (B)
+          reg &= ~0x2;
         }
 
         if (cpu.buttons[Gamepad.select]) {
-          // print("Select button is pressed");
-          reg &= ~0x4; // Clear bit 2 (Select)
+          reg &= ~0x4;
         }
 
         if (cpu.buttons[Gamepad.start]) {
-          // print("Start button is pressed");
-          reg &= ~0x8; // Clear bit 3 (Start)
+          reg &= ~0x8;
         }
       }
 
       return reg;
     } else if (address == MemoryRegisters.nr52) {
-      int reg = registers[MemoryRegisters.nr52] & 0x80;
+      // Bit 7 is the sound enable flag, Bits 0-3 are for active sound channels
+      int reg = registers[MemoryRegisters.nr52] &
+          0x80; // Preserve the sound enable flag
 
-      // if(cpu.sound.channel1.isPlaying){reg |= 0x01};
-      // if(cpu.sound.channel2.isPlaying){reg |= 0x02};
-      // if(cpu.sound.channel3.isPlaying){reg |= 0x04};
-      // if(cpu.sound.channel4.isPlaying){reg |= 0x08};
+      if (cpu.audio.channel1.isPlaying) reg |= 0x01; // Channel 1 playing
+      if (cpu.audio.channel2.isPlaying) reg |= 0x02; // Channel 2 playing
+      if (cpu.audio.channel3.isPlaying) reg |= 0x04; // Channel 3 playing
+      if (cpu.audio.channel4.isPlaying) reg |= 0x08; // Channel 4 playing
 
-      return reg;
+      return reg; // Return the status of sound channels
     }
 
     return registers[address];
