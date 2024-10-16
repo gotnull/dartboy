@@ -41,6 +41,38 @@ class Audio {
     nr52 = 0x80; // Set NR52 to the correct initial state (sound off, bit 7)
   }
 
+  void tickFrameSequencer(int cycles) {
+    // Advance the frame sequencer with every 512 cycles (CPU clocked at 4194304 Hz)
+    frameSequencer += cycles;
+
+    if (frameSequencer >= CPU.frequency ~/ 512) {
+      frameSequencer -= CPU.frequency ~/ 512;
+      // Step through the sequencer:
+      switch (frameSequencer % 8) {
+        case 0:
+          channel1.updateLengthCounter();
+          channel2.updateLengthCounter();
+          channel3.updateLengthCounter();
+          channel4.updateLengthCounter();
+          break;
+        case 2:
+          channel1.updateSweep();
+          break;
+        case 4:
+          channel1.updateLengthCounter();
+          channel2.updateLengthCounter();
+          channel3.updateLengthCounter();
+          channel4.updateLengthCounter();
+          break;
+        case 7:
+          channel1.updateEnvelope();
+          channel2.updateEnvelope();
+          channel4.updateEnvelope();
+          break;
+      }
+    }
+  }
+
   int mixAudioChannels() {
     // Combine audio outputs from all channels
     int mixedOutput = 0;
@@ -59,17 +91,18 @@ class Audio {
   void tick(int delta) {
     clockCycleAccumulator += delta;
 
+    // Update the frame sequencer every CPU tick
+    tickFrameSequencer(delta);
+
     channel1.tick(delta);
     channel2.tick(delta);
     channel3.tick(delta);
     channel4.tick(delta);
 
-    // Only process audio if recording is active
     if (recording && clockCycleAccumulator >= CPU.frequency ~/ sampleRate) {
       int mixedOutput = mixAudioChannels();
       mixedOutput = mixedOutput.clamp(-32768, 32767);
 
-      // Add mixed output to the audio buffer (16-bit signed samples)
       audioBuffer.add(mixedOutput);
 
       clockCycleAccumulator -= CPU.frequency ~/ sampleRate;
@@ -414,14 +447,25 @@ class Channel1 {
 
   void writeNR14(int value) {
     nrx4 = value;
-    frequency = (nrx4 & 0x7) << 8 |
-        nrx3; // Combine the two registers to get the full frequency
-    cycleLength = (2048 - frequency) * 4; // Update cycle length
+    frequency = (nrx4 & 0x7) << 8 | nrx3;
+    cycleLength = (2048 - frequency) * 4;
 
     if ((value & 0x80) != 0) {
-      // If bit 7 is set, reset waveform phase
+      // If bit 7 is set, trigger the channel
       waveformPhase = 0;
-      enabled = true; // Channel is enabled here
+      enabled = true;
+
+      // Reload envelope timer and volume
+      envelopeTimer = envelopeSweep;
+      volume = (nrx2 >> 4) & 0xF;
+
+      // Perform immediate frequency sweep if enabled
+      if (sweepShift > 0 || sweepDirection) {
+        updateSweep();
+      }
+
+      // Reload frequency timer
+      cycleLength = (2048 - frequency) * 4;
     }
   }
 
@@ -542,13 +586,20 @@ class Channel2 {
 
   void writeNR24(int value) {
     nrx4 = value;
-    frequency = (nrx4 & 0x7) << 8 | nrx3; // Update frequency
-    cycleLength = (2048 - frequency) * 4; // Update cycle length
+    frequency = (nrx4 & 0x7) << 8 | nrx3;
+    cycleLength = (2048 - frequency) * 4;
 
     if ((value & 0x80) != 0) {
-      // If bit 7 is set, reset waveform phase and enable the channel
+      // Trigger the channel
       waveformPhase = 0;
-      enabled = true; // Channel is enabled here
+      enabled = true;
+
+      // Reload envelope timer and volume
+      envelopeTimer = envelopeSweep;
+      volume = (nrx2 >> 4) & 0xF;
+
+      // Reload frequency timer
+      cycleLength = (2048 - frequency) * 4;
     }
   }
 
@@ -720,17 +771,18 @@ class Channel3 {
   /// NR34: Frequency High and Control
   void writeNR34(int value) {
     nrx4 = value;
+    frequency = (nrx4 & 0x7) << 8 | nrx3;
 
-    // Combine NR33 (lower 8 bits) and NR34 (upper 3 bits) to update the full frequency
-    frequency = (nrx4 & 0x07) << 8 | nrx3;
-
-    // If bit 7 is set, trigger the sound (restart the waveform playback)
     if ((nrx4 & 0x80) != 0) {
-      restartWaveform();
+      // Trigger the channel
+      waveformPhase = 0;
       enabled = true;
+
+      // Reset sample position and buffer (but don’t refill immediately)
+      // The wave channel will handle the buffer on its own.
+      waveformPhase = 0;
     }
 
-    // If bit 6 is set, enable the length counter
     lengthEnabled = (nrx4 & 0x40) != 0;
   }
 
@@ -866,14 +918,17 @@ class Channel4 {
   void writeNR44(int value) {
     nrx4 = value;
 
-    // If bit 7 is set, reset length counter and envelope
     if ((value & 0x80) != 0) {
-      lengthCounter = 64; // Reset length counter
-      envelopeTimer = envelopeSweep; // Reset envelope
-      enabled = true; // Enable the channel here
+      // Trigger the noise channel
+      lengthCounter = 64;
+      envelopeTimer = envelopeSweep;
+      enabled = true;
+
+      // Reset the LFSR (set all bits to 1)
+      lfsr = 0x7FFF;
     }
 
-    // Length counter enable (bit 6)
+    // Enable the length counter if bit 6 is set
     lengthEnabled = (value & 0x40) != 0;
   }
 
