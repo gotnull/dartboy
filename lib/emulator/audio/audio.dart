@@ -9,6 +9,7 @@ class Audio {
   int frameSequencer = 0;
   int divApu = 0;
   int mCycles = 0;
+  int frameSequencerStep = 0; // Track the current step in the frame sequencer
 
   int sampleRate = 44100; // Set your sample rate here
   List<int> audioBuffer = [];
@@ -74,39 +75,69 @@ class Audio {
   }
 
   int mixAudioChannels() {
-    // Combine audio outputs from all channels
-    int mixedOutput = 0;
-    mixedOutput += channel1.getOutput();
-    mixedOutput += channel2.getOutput();
-    mixedOutput += channel3.getOutput();
-    mixedOutput += channel4.getOutput();
+    int left = 0;
+    int right = 0;
 
-    // Debugging: Print the mixed output before clamping
-    // print("Mixed Output: $mixedOutput");
+    if (nr51 & 0x01 != 0) left += channel1.getOutput();
+    if (nr51 & 0x10 != 0) right += channel1.getOutput();
 
-    // Return the clamped value within the 16-bit range
-    return mixedOutput.clamp(-32768, 32767);
+    if (nr51 & 0x02 != 0) left += channel2.getOutput();
+    if (nr51 & 0x20 != 0) right += channel2.getOutput();
+
+    if (nr51 & 0x04 != 0) left += channel3.getOutput();
+    if (nr51 & 0x40 != 0) right += channel3.getOutput();
+
+    if (nr51 & 0x08 != 0) left += channel4.getOutput();
+    if (nr51 & 0x80 != 0) right += channel4.getOutput();
+
+    // Apply master volume control from NR50
+    left = (left * ((nr50 >> 4) & 0x07)) ~/ 7;
+    right = (right * (nr50 & 0x07)) ~/ 7;
+
+    // Clamp and return mixed output
+    return (left + right).clamp(-32768, 32767);
   }
 
   void tick(int delta) {
     clockCycleAccumulator += delta;
-
-    // Update the frame sequencer every CPU tick
-    tickFrameSequencer(delta);
 
     channel1.tick(delta);
     channel2.tick(delta);
     channel3.tick(delta);
     channel4.tick(delta);
 
-    if (recording && clockCycleAccumulator >= CPU.frequency ~/ sampleRate) {
-      int mixedOutput = mixAudioChannels();
-      mixedOutput = mixedOutput.clamp(-32768, 32767);
+    // Update the frame sequencer at 512 Hz (each step has its own frequency)
+    frameSequencer += delta;
+    if (frameSequencer >= CPU.frequency / 512) {
+      frameSequencer = 0;
 
+      // Each channel should update its envelope on the 64 Hz step (every 8 frame sequencer steps)
+      if (frameSequencerStep % 8 == 7) {
+        channel1.updateEnvelope();
+        channel2.updateEnvelope();
+        channel4.updateEnvelope();
+      }
+
+      // Move to the next frame sequencer step
+      frameSequencerStep = (frameSequencerStep + 1) % 8;
+    }
+
+    // Check if it's time to process audio samples
+    if (recording && clockCycleAccumulator >= CPU.frequency ~/ sampleRate) {
+      // Mix audio from all channels
+      int mixedOutput = mixAudioChannels();
+      mixedOutput = mixedOutput.clamp(
+          -32768, 32767); // Clamp the mixed output within the valid range
+
+      // Add the mixed audio output to the buffer
       audioBuffer.add(mixedOutput);
 
+      // Reset the accumulator for the next audio sample
       clockCycleAccumulator -= CPU.frequency ~/ sampleRate;
     }
+
+    // print("Clock Cycle Accumulator: $clockCycleAccumulator");
+    // print("Audio Buffer Size: ${audioBuffer.length}");
   }
 
   /// Starts recording audio
@@ -490,14 +521,26 @@ class Channel1 {
     }
   }
 
+  // Generate square wave based on duty cycle
   int getOutput() {
     if (!enabled) return 0;
 
-    // Generate square wave: if we are in the first half of the cycle, return high; otherwise, return low
-    if (waveformPhase < cycleLength / 2) {
-      return waveformHigh;
+    // Use the duty cycle to determine the high/low phases of the square wave
+    int dutyCycle = (nrx1 >> 6) & 0x3; // Get the duty cycle from NRx1
+
+    // Define duty patterns using hexadecimal equivalents of binary values
+    int dutyPattern = [
+      0x01, // 00000001 (12.5%)
+      0x81, // 10000001 (25%)
+      0xC7, // 11000111 (50%)
+      0x7E // 01111110 (75%)
+    ][dutyCycle];
+
+    // Determine if the current phase is high or low based on the duty cycle
+    if ((dutyPattern & (1 << (waveformPhase >> (cycleLength ~/ 8)))) != 0) {
+      return waveformHigh; // High phase
     } else {
-      return waveformLow;
+      return waveformLow; // Low phase
     }
   }
 
@@ -696,19 +739,26 @@ class Channel2 {
 }
 
 class Channel3 {
-  int nrx0 = 0; // Sound ON/OFF
-  int nrx1 = 0; // Sound Length
-  int nrx2 = 0; // Output Level
-  int nrx3 = 0; // Frequency low
-  int nrx4 = 0; // Frequency high + Control
+  int nrx0 = 0; // Sound ON/OFF (NR30)
+  int nrx1 = 0; // Sound Length (NR31)
+  int nrx2 = 0; // Output Level (NR32)
+  int nrx3 = 0; // Frequency low (NR33)
+  int nrx4 = 0; // Frequency high + Control (NR34)
 
   bool enabled = false;
   bool lengthEnabled = false;
   int lengthCounter = 0;
+  int frequency = 0;
+  int outputLevel = 0; // Volume control
 
+  // Waveform data (32 samples, 4-bit each)
+  List<int> waveformData = List.filled(32, 0);
+
+  int sampleBuffer = 0; // Buffer to store the current sample
+  int currentSampleIndex = 0; // Index of the current sample in the waveform
   int waveformPhase = 0; // Tracks the current phase within the waveform cycle
-  int outputLevel = 0; // Current output level (volume)
-  int frequency = 0; // Current frequency
+
+  int cycleLength = 0; // Frequency timer period
 
   int readNR30() => nrx0 | 0x7F;
   int readNR31() => nrx1 | 0xFF;
@@ -719,82 +769,96 @@ class Channel3 {
   /// NR30: Sound ON/OFF
   void writeNR30(int value) {
     nrx0 = value;
+    enabled = (nrx0 & 0x80) != 0; // If bit 7 is set, channel is enabled
 
-    // If bit 7 is set, the channel is enabled (sound ON), otherwise, it's OFF
-    enabled = (nrx0 & 0x80) != 0;
-
-    // If the channel is disabled, reset its state
     if (!enabled) {
-      reset();
+      reset(); // Reset the channel if it's disabled
     }
   }
 
-  /// NR31: Sound Length
+  /// NR31: Sound Length (256 steps)
   void writeNR31(int value) {
     nrx1 = value;
-    lengthCounter = 256 - value; // Set the length of waveform playback
-
-    // Enable the channel when sound length is set
-    enabled = true;
+    lengthCounter = 256 - value; // Set the length counter based on NR31
   }
 
   /// NR32: Output Level (Volume Control)
   void writeNR32(int value) {
     nrx2 = value;
-
-    // Output level (volume control) is determined by bits 5 and 6 of nrx2
-    // 00 = Mute (no sound), 01 = 100% volume, 10 = 50% volume, 11 = 25% volume
-    switch ((nrx2 >> 5) & 0x03) {
-      case 0:
-        outputLevel = 0; // Mute
-        break;
-      case 1:
-        outputLevel = 100; // Full volume
-        break;
-      case 2:
-        outputLevel = 50; // Half volume
-        break;
-      case 3:
-        outputLevel = 25; // Quarter volume
-        break;
-    }
+    // Output level (00 = mute, 01 = full volume, 10 = half, 11 = quarter)
+    outputLevel = (nrx2 >> 5) & 0x03;
   }
 
   /// NR33: Frequency Low (lower 8 bits of frequency)
   void writeNR33(int value) {
     nrx3 = value;
-
-    // Combine NR33 (lower 8 bits) and NR34 (upper 3 bits) to update the full frequency
-    frequency = (nrx4 & 0x07) << 8 | nrx3;
+    frequency = (nrx4 & 0x07) << 8 | nrx3; // Combine NR33 and NR34
+    cycleLength = (2048 - frequency) * 2; // Set cycle length based on frequency
   }
 
   /// NR34: Frequency High and Control
   void writeNR34(int value) {
     nrx4 = value;
-    frequency = (nrx4 & 0x7) << 8 | nrx3;
+    frequency = (nrx4 & 0x07) << 8 | nrx3;
+    cycleLength = (2048 - frequency) * 2;
 
     if ((nrx4 & 0x80) != 0) {
-      // Trigger the channel
-      waveformPhase = 0;
+      restartWaveform(); // Restart waveform when triggered
       enabled = true;
-
-      // Reset sample position and buffer (but don’t refill immediately)
-      // The wave channel will handle the buffer on its own.
-      waveformPhase = 0;
     }
 
+    // Enable length counter if bit 6 is set
     lengthEnabled = (nrx4 & 0x40) != 0;
   }
 
-  /// Helper method to restart the waveform playback
+  /// Restart the waveform playback (trigger event)
   void restartWaveform() {
-    // Reset the phase of the waveform
-    waveformPhase = 0;
-
-    // Enable the channel
-    enabled = true;
+    waveformPhase = 0; // Reset waveform phase
+    currentSampleIndex = 0; // Reset to the beginning of the wave table
+    sampleBuffer = waveformData[currentSampleIndex]; // Load the first sample
   }
 
+  /// Length counter logic
+  void updateLengthCounter() {
+    if (lengthEnabled && lengthCounter > 0) {
+      lengthCounter--;
+      if (lengthCounter == 0) {
+        enabled = false; // Disable the channel when length counter reaches 0
+      }
+    }
+  }
+
+  /// Tick method for Channel 3 (Wave channel)
+  void tick(int delta) {
+    if (!enabled) return;
+
+    // Update the waveform phase based on elapsed cycles
+    waveformPhase += delta;
+
+    // Each sample is played over a cycle, and the phase advances through the waveform
+    if (waveformPhase >= cycleLength) {
+      waveformPhase = 0; // Reset the phase
+      currentSampleIndex =
+          (currentSampleIndex + 1) % 32; // Move to the next sample
+      sampleBuffer = waveformData[currentSampleIndex]; // Load the next sample
+    }
+  }
+
+  /// Get the current output from Channel 3
+  int getOutput() {
+    if (!enabled || outputLevel == 0) {
+      return 0; // Return 0 if the channel is disabled or muted
+    }
+
+    // Scale output based on the NR32 (volume control)
+    int scaledOutput = (sampleBuffer >> (4 - outputLevel)) &
+        0xF; // Adjust output based on volume
+
+    // Return the scaled output value
+    return (scaledOutput * 2) - 15; // Normalize to signed value (-15 to 15)
+  }
+
+  /// Resets the state of Channel 3
   void reset() {
     nrx0 = 0;
     nrx1 = 0;
@@ -802,36 +866,11 @@ class Channel3 {
     nrx3 = 0;
     nrx4 = 0;
     enabled = false;
-  }
-
-  /// Tick method for Channel 3 (Wave channel)
-  void tick(int delta) {
-    if (!enabled) {
-      return;
-    }
-
-    // Implement the frequency, wave table update logic
-    // Update the sound based on elapsed CPU cycles
-  }
-
-  /// Return the current output for this channel.
-  int getOutput() {
-    if (!enabled) {
-      return 0;
-    }
-
-    // Simplified wave channel output
-    return (sin(nrx3) * nrx2).toInt();
-  }
-
-  // No envelope or sweep logic for Channel 3, only length
-  void updateLengthCounter() {
-    if (lengthEnabled && lengthCounter > 0) {
-      lengthCounter--;
-      if (lengthCounter == 0) {
-        enabled = false;
-      }
-    }
+    lengthCounter = 0;
+    waveformPhase = 0;
+    currentSampleIndex = 0;
+    sampleBuffer = 0;
+    outputLevel = 0;
   }
 }
 
@@ -986,38 +1025,31 @@ class Channel4 {
   void updateEnvelope() {
     if (envelopeSweep > 0) {
       envelopeTimer--;
-      if (envelopeTimer <= 0) {
-        envelopeTimer = envelopeSweep;
-        if (envelopeDirection) {
-          if (volume < 15) {
-            volume++;
-          }
-        } else {
-          if (volume > 0) {
-            volume--;
-          }
+      if (envelopeTimer == 0) {
+        envelopeTimer = envelopeSweep; // Reset timer
+        if (envelopeDirection && volume < 15) {
+          volume++; // Increase volume
+        } else if (!envelopeDirection && volume > 0) {
+          volume--; // Decrease volume
         }
       }
     }
+  }
+
+  int getOutput() {
+    if (!enabled) {
+      return 0;
+    }
+
+    // Generate the noise and scale it by the current volume
+    int noiseOutput = generateNoise();
+    return noiseOutput * volume;
   }
 
   int generateNoise() {
     int feedback = (lfsr ^ (lfsr >> 1)) & 1;
     lfsr = (lfsr >> 1) | (feedback << 14);
     return feedback * 2 - 1; // Convert 0/1 to -1/1 for noise output
-  }
-
-  /// Return the current output for this channel.
-  int getOutput() {
-    if (!enabled) {
-      return 0;
-    }
-
-    // Call the noise generator based on the LFSR
-    int noiseOutput = generateNoise();
-
-    // Scale the noise output by the current volume envelope
-    return noiseOutput * volume;
   }
 
   /// Simulate a noise generator (polynomial counter-based noise)
