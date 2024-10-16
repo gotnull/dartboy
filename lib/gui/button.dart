@@ -13,7 +13,7 @@ Widget customButton({
   bool isCartridgeLoaded = cpu != null && cpu.cartridge.data.isNotEmpty;
 
   return ElevatedButton(
-    onPressed: (label == 'Load' || label == 'Debug')
+    onPressed: (label == 'Load' || label == 'Debug' || label == 'Save Audio')
         ? onPressed // Always enable Load and Debug
         : (label == 'Run' &&
                 MainScreen.emulator.state != EmulatorState.running &&

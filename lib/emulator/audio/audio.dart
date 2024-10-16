@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'dart:math';
+import 'package:dartboy/emulator/cpu/cpu.dart';
 import 'package:dartboy/emulator/memory/memory_registers.dart';
 
 class Audio {
@@ -7,6 +9,15 @@ class Audio {
   int frameSequencer = 0;
   int divApu = 0;
   int mCycles = 0;
+
+  int sampleRate = 44100; // Set your sample rate here
+  List<int> audioBuffer = [];
+  RandomAccessFile? audioFile; // The file to write audio samples to
+  int totalSamplesWritten = 0;
+  bool isWritingToFile = false;
+
+  // Flag to indicate if recording is active
+  bool recording = false;
 
   // Variables for each channel and overall sound control
   Channel1 channel1 = Channel1();
@@ -30,39 +41,128 @@ class Audio {
     nr52 = 0x80; // Set NR52 to the correct initial state (sound off, bit 7)
   }
 
-  /// Tick the audio system.
-  /// This method updates all audio channels and processes the audio output.
+  int mixAudioChannels() {
+    // Combine audio outputs from all channels
+    int mixedOutput = 0;
+    mixedOutput += channel1.getOutput();
+    mixedOutput += channel2.getOutput();
+    mixedOutput += channel3.getOutput();
+    mixedOutput += channel4.getOutput();
+
+    // Debugging: Print the mixed output before clamping
+    // print("Mixed Output: $mixedOutput");
+
+    // Return the clamped value within the 16-bit range
+    return mixedOutput.clamp(-32768, 32767);
+  }
+
   void tick(int delta) {
     clockCycleAccumulator += delta;
+
     channel1.tick(delta);
     channel2.tick(delta);
     channel3.tick(delta);
     channel4.tick(delta);
 
-    // Update the frame sequencer every 8192 cycles
-    if (clockCycleAccumulator >= 8192) {
-      frameSequencer = (frameSequencer + 1) % 8;
+    // Only process audio if recording is active
+    if (recording && clockCycleAccumulator >= CPU.frequency ~/ sampleRate) {
+      int mixedOutput = mixAudioChannels();
+      mixedOutput = mixedOutput.clamp(-32768, 32767);
 
-      if (frameSequencer == 0 ||
-          frameSequencer == 2 ||
-          frameSequencer == 4 ||
-          frameSequencer == 6) {
-        channel1.updateLengthCounter();
-        channel2.updateLengthCounter();
-        channel3.updateLengthCounter();
-        channel4.updateLengthCounter();
-      }
-      if (frameSequencer == 7) {
-        channel1.updateEnvelope();
-        channel2.updateEnvelope();
-        channel4.updateEnvelope();
-      }
-      if (frameSequencer == 2 || frameSequencer == 6) {
-        channel1.updateSweep();
-      }
+      // Add mixed output to the audio buffer (16-bit signed samples)
+      audioBuffer.add(mixedOutput);
 
-      clockCycleAccumulator -= 8192;
+      clockCycleAccumulator -= CPU.frequency ~/ sampleRate;
     }
+  }
+
+  /// Starts recording audio
+  Future<void> startRecording() async {
+    // Clear the buffer and reset the total sample count
+    audioBuffer.clear();
+    totalSamplesWritten = 0;
+
+    // Open the file to write audio data
+    audioFile = await File("output.wav").open(mode: FileMode.write);
+
+    // Write a placeholder WAV header (we'll overwrite this later with the correct size)
+    await audioFile!.writeFrom(_generateWaveHeader(0));
+
+    // Set recording to active
+    recording = true;
+  }
+
+  /// Stops recording and writes the buffer to the file
+  Future<void> stopRecording() async {
+    if (audioFile != null) {
+      // Set recording to inactive
+      recording = false;
+
+      // Flush remaining audio data to the file
+      await _flushAudioBuffer();
+
+      // Go back and update the WAV header with the correct size info
+      await audioFile!.setPosition(0);
+      await audioFile!.writeFrom(_generateWaveHeader(totalSamplesWritten));
+
+      // Close the file
+      await audioFile!.close();
+      audioFile = null;
+    }
+  }
+
+  /// Flush the audio buffer to the file
+  Future<void> _flushAudioBuffer() async {
+    if (audioBuffer.isEmpty || audioFile == null) return;
+
+    // Convert the audio buffer to bytes
+    List<int> byteBuffer = [];
+    for (int sample in audioBuffer) {
+      byteBuffer.add(sample & 0xFF); // Write low byte
+      byteBuffer.add((sample >> 8) & 0xFF); // Write high byte
+    }
+
+    // Write the buffer to the file
+    await audioFile!.writeFrom(byteBuffer);
+
+    // Increment the total samples written
+    totalSamplesWritten += audioBuffer.length;
+
+    // Clear the buffer
+    audioBuffer.clear();
+  }
+
+  /// Generate the WAV header based on the number of samples written
+  List<int> _generateWaveHeader(int totalSamples) {
+    int byteRate = sampleRate * 2; // 2 bytes per sample
+    int dataSize = totalSamples * 2; // 16-bit (2 bytes per sample)
+
+    return [
+      // "RIFF" chunk descriptor
+      0x52, 0x49, 0x46, 0x46, // Chunk ID ("RIFF")
+      (36 + dataSize) & 0xFF,
+      ((36 + dataSize) >> 8) & 0xFF,
+      ((36 + dataSize) >> 16) & 0xFF,
+      ((36 + dataSize) >> 24) & 0xFF, // Chunk size
+      0x57, 0x41, 0x56, 0x45, // Format ("WAVE")
+
+      // "fmt " sub-chunk
+      0x66, 0x6D, 0x74, 0x20, // Sub-chunk ID ("fmt ")
+      16, 0, 0, 0, // Sub-chunk size (16 for PCM)
+      1, 0, // Audio format (1 for PCM)
+      1, 0, // Number of channels (1 for mono)
+      sampleRate & 0xFF, (sampleRate >> 8) & 0xFF, (sampleRate >> 16) & 0xFF,
+      (sampleRate >> 24) & 0xFF, // Sample rate
+      byteRate & 0xFF, (byteRate >> 8) & 0xFF, (byteRate >> 16) & 0xFF,
+      (byteRate >> 24) & 0xFF, // Byte rate
+      2, 0, // Block align (2 bytes per sample)
+      16, 0, // Bits per sample (16 bits)
+
+      // "data" sub-chunk
+      0x64, 0x61, 0x74, 0x61, // Sub-chunk ID ("data")
+      dataSize & 0xFF, (dataSize >> 8) & 0xFF, (dataSize >> 16) & 0xFF,
+      (dataSize >> 24) & 0xFF // Sub-chunk size
+    ];
   }
 
   /// Read methods for the sound registers
@@ -225,6 +325,13 @@ class Channel1 {
   int nrx3 = 0; // Frequency low
   int nrx4 = 0; // Frequency high + Control
 
+  int waveformPhase = 0; // Track the position in the waveform cycle
+  int cycleLength =
+      441; // For example, for a 441 Hz tone at 44.1 kHz sample rate
+
+  int waveformHigh = 200; // Amplitude for the high phase of the square wave
+  int waveformLow = -200; // Amplitude for the low phase of the square wave
+
   bool enabled = false;
   bool lengthEnabled = false;
   int lengthCounter = 0;
@@ -250,26 +357,31 @@ class Channel1 {
 
   void writeNR10(int value) {
     nrx0 = value;
+    enabled = true;
     // Handle the sweep logic here
   }
 
   void writeNR11(int value) {
     nrx1 = value;
+    enabled = true;
     // Handle sound length/wave duty update
   }
 
   void writeNR12(int value) {
     nrx2 = value;
+    enabled = true;
     // Handle volume envelope update
   }
 
   void writeNR13(int value) {
     nrx3 = value;
+    enabled = true;
     // Handle frequency low update
   }
 
   void writeNR14(int value) {
     nrx4 = value;
+    enabled = true;
     // Handle frequency high and control update
   }
 
@@ -282,16 +394,27 @@ class Channel1 {
     enabled = false;
   }
 
-  /// Tick method for Channel 1, updates the square wave generation.
   void tick(int delta) {
-    // Update the frequency, volume, and other properties based on elapsed CPU cycles
-    // Simulate the sound wave generation based on the channel's properties
-    if (!enabled) {
-      return;
-    }
+    if (!enabled) return;
 
-    // Here, update the frequency, volume, and other internal state based on the delta time
-    // Implement the envelope, frequency sweep, etc.
+    // Update waveformPhase based on delta (CPU cycles passed)
+    waveformPhase += delta;
+
+    // Reset the phase when the end of the cycle is reached
+    if (waveformPhase >= cycleLength) {
+      waveformPhase = 0; // Reset phase at the end of the waveform cycle
+    }
+  }
+
+  int getOutput() {
+    if (!enabled) return 0;
+
+    // Generate square wave: if we are in the first half of the cycle, return high; otherwise, return low
+    if (waveformPhase < cycleLength / 2) {
+      return waveformHigh;
+    } else {
+      return waveformLow;
+    }
   }
 
   // Length counter logic
@@ -351,16 +474,6 @@ class Channel1 {
       return frequency + shift; // Increase frequency
     }
   }
-
-  /// Return the current output for this channel
-  int getOutput() {
-    if (!enabled) {
-      return 0;
-    }
-    // Generate and return the output based on the current frequency and volume
-    // For a square wave, toggle between high and low values
-    return (sin(nrx3) * nrx2).toInt(); // Simplified example
-  }
 }
 
 class Channel2 {
@@ -387,21 +500,25 @@ class Channel2 {
 
   void writeNR21(int value) {
     nrx1 = value;
+    enabled = true;
     // Handle sound length/wave duty update
   }
 
   void writeNR22(int value) {
     nrx2 = value;
+    enabled = true;
     // Handle volume envelope update
   }
 
   void writeNR23(int value) {
     nrx3 = value;
+    enabled = true;
     // Handle frequency low update
   }
 
   void writeNR24(int value) {
     nrx4 = value;
+    enabled = true;
     // Handle frequency high and control update
   }
 

@@ -62,6 +62,9 @@ class Emulator {
     Gamepads.events.listen(
       (GamepadEvent event) => onGamepadEvent(event),
     );
+
+    // Start recording audio when the ROM is loaded
+    cpu?.audio.startRecording();
   }
 
   void onGamepadEvent(GamepadEvent event) {

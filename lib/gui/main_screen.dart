@@ -127,6 +127,7 @@ class MainScreenState extends State<MainScreen> {
       return;
     }
     MainScreen.emulator.run();
+
     _startHudUpdateTimer(); // Start the HUD refresh timer
     setState(() {}); // Trigger UI rebuild after running
   }
@@ -142,11 +143,13 @@ class MainScreenState extends State<MainScreen> {
       return;
     }
     MainScreen.emulator.pause();
+    MainScreen.emulator.cpu?.audio.stopRecording(); // Stop audio recording
     _stopHudUpdateTimer(); // Stop the HUD refresh timer when paused
     setState(() {}); // Trigger UI rebuild after pausing
   }
 
   void _resetEmulator() {
+    MainScreen.emulator.cpu?.audio.stopRecording(); // Stop audio recording
     MainScreen.emulator.reset();
     _stopHudUpdateTimer(); // Stop the HUD refresh timer when reset
     setState(() {}); // Trigger UI rebuild after reset
