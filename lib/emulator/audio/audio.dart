@@ -398,6 +398,11 @@ class Channel1 {
     }
 
     envelopeTimer = envelopeSweep;
+
+    // Enable the channel if envelope parameters are valid
+    if (volume > 0 || envelopeSweep > 0) {
+      enabled = true;
+    }
   }
 
   void writeNR13(int value) {
@@ -523,8 +528,10 @@ class Channel2 {
 
   void writeNR21(int value) {
     nrx1 = value;
-    // Handle sound length/wave duty update
     updateCycleLength();
+
+    // Enable the channel when sound length is configured
+    enabled = true;
   }
 
   void writeNR23(int value) {
@@ -547,8 +554,11 @@ class Channel2 {
 
   void writeNR22(int value) {
     nrx2 = value;
-    enabled = true;
-    // Handle volume envelope update
+
+    // Enable the channel when envelope parameters are set
+    if (volume > 0 || envelopeSweep > 0) {
+      enabled = true;
+    }
   }
 
   void reset() {
@@ -671,9 +681,10 @@ class Channel3 {
   /// NR31: Sound Length
   void writeNR31(int value) {
     nrx1 = value;
+    lengthCounter = 256 - value; // Set the length of waveform playback
 
-    // The length is set based on the lower 8 bits of nrx1 (total length = 256 steps)
-    lengthCounter = 256 - value; // Length of the waveform playback in steps
+    // Enable the channel when sound length is set
+    enabled = true;
   }
 
   /// NR32: Output Level (Volume Control)
@@ -797,7 +808,10 @@ class Channel4 {
   /// NR41: Sound length (64 steps)
   void writeNR41(int value) {
     nrx1 = value;
-    lengthCounter = 64 - (value & 0x3F); // Update length counter (6-bit value)
+    lengthCounter = 64 - (value & 0x3F); // Set the length of noise playback
+
+    // Enable the channel when sound length is configured
+    enabled = true;
   }
 
   /// NR42: Volume envelope
