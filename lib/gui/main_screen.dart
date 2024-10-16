@@ -61,7 +61,7 @@ class MainScreenState extends State<MainScreen> {
 
       // Try loading the asset
       ByteData romData = await rootBundle.load(
-        "assets/roms/tetris_world_dx.gbc",
+        "assets/roms/tetris.gb",
         // "assets/roms/cpu_instrs.gb",
       );
 

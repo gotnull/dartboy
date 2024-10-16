@@ -357,32 +357,67 @@ class Channel1 {
 
   void writeNR10(int value) {
     nrx0 = value;
-    enabled = true;
-    // Handle the sweep logic here
+
+    // Extract sweep parameters
+    int sweepTime = (value >> 4) & 0x7; // Sweep time in number of steps
+    bool sweepDirection =
+        (value & 0x08) == 0x08; // 1 for decrease, 0 for increase
+    int sweepShift = value & 0x07; // Frequency shift
+
+    if (sweepTime == 0) {
+      sweepTime = 8; // According to hardware behavior
+    }
+
+    sweepTimer = sweepTime;
+    sweepEnabled = sweepShift > 0 || sweepDirection;
   }
 
   void writeNR11(int value) {
     nrx1 = value;
-    enabled = true;
-    // Handle sound length/wave duty update
+    lengthCounter = 64 - (value & 0x3F); // 64-step length counter for Channel 1
+  }
+
+  void updateLengthCounter() {
+    if (lengthEnabled && lengthCounter > 0) {
+      lengthCounter--;
+      if (lengthCounter == 0) {
+        enabled = false; // Disable channel when the counter reaches zero
+      }
+    }
   }
 
   void writeNR12(int value) {
     nrx2 = value;
-    enabled = true;
-    // Handle volume envelope update
+
+    volume = value & 0xF; // Initial volume
+    envelopeDirection = (value & 0x08) != 0; // Increase if 1, decrease if 0
+    envelopeSweep = (value >> 4) & 0x7; // Number of steps for envelope
+
+    if (envelopeSweep == 0) {
+      envelopeSweep = 8; // Default to 8 steps when set to 0
+    }
+
+    envelopeTimer = envelopeSweep;
   }
 
   void writeNR13(int value) {
     nrx3 = value;
-    enabled = true;
-    // Handle frequency low update
+    frequency = (nrx4 & 0x7) << 8 |
+        nrx3; // Combine the two registers to get the full frequency
+    cycleLength = (2048 - frequency) * 4; // Update cycle length
   }
 
   void writeNR14(int value) {
     nrx4 = value;
-    enabled = true;
-    // Handle frequency high and control update
+    frequency = (nrx4 & 0x7) << 8 |
+        nrx3; // Combine the two registers to get the full frequency
+    cycleLength = (2048 - frequency) * 4; // Update cycle length
+
+    if ((value & 0x80) != 0) {
+      // If bit 7 is set, reset waveform phase
+      waveformPhase = 0;
+      enabled = true; // Channel is enabled here
+    }
   }
 
   void reset() {
@@ -417,14 +452,30 @@ class Channel1 {
     }
   }
 
-  // Length counter logic
-  void updateLengthCounter() {
-    // Only update length counter if the length is enabled
-    if (lengthEnabled && lengthCounter > 0) {
-      lengthCounter--;
-      if (lengthCounter == 0) {
-        enabled = false; // Turn off the channel when length expires
+  void updateSweep() {
+    if (sweepEnabled && sweepTimer > 0) {
+      sweepTimer--;
+      if (sweepTimer == 0) {
+        sweepTimer = sweepTime;
+        int newFrequency = calculateSweepFrequency();
+        if (newFrequency > 2047) {
+          enabled = false; // Disable if frequency exceeds 2047
+        } else {
+          frequency = newFrequency;
+          cycleLength = (2048 - frequency) * 4; // Update cycle length
+        }
       }
+    }
+  }
+
+  int calculateSweepFrequency() {
+    int shiftedFrequency = frequency >> sweepShift;
+
+    // Adjust frequency based on direction
+    if (sweepDirection) {
+      return frequency - shiftedFrequency; // Decrease frequency
+    } else {
+      return frequency + shiftedFrequency; // Increase frequency
     }
   }
 
@@ -432,46 +483,14 @@ class Channel1 {
   void updateEnvelope() {
     if (envelopeSweep > 0) {
       envelopeTimer--;
-      if (envelopeTimer <= 0) {
+      if (envelopeTimer == 0) {
         envelopeTimer = envelopeSweep; // Reset timer
-        if (envelopeDirection) {
-          if (volume < 15) {
-            volume++; // Increase volume
-          }
-        } else {
-          if (volume > 0) {
-            volume--; // Decrease volume
-          }
+        if (envelopeDirection && volume < 15) {
+          volume++; // Increase volume
+        } else if (!envelopeDirection && volume > 0) {
+          volume--; // Decrease volume
         }
       }
-    }
-  }
-
-  // Sweep logic (only for Channel 1)
-  void updateSweep() {
-    // Handle frequency sweep, similar to the C code
-    if (sweepTime > 0 && sweepEnabled) {
-      sweepTimer--;
-      if (sweepTimer <= 0) {
-        sweepTimer = sweepTime; // Reset sweep timer
-        // Calculate new frequency and check for overflow
-        int newFrequency = calculateSweepFrequency();
-        if (newFrequency > 2047) {
-          enabled = false; // Disable channel if overflowed
-        } else if (sweepShift > 0) {
-          frequency = newFrequency;
-        }
-      }
-    }
-  }
-
-  // Method to calculate the new frequency during a sweep
-  int calculateSweepFrequency() {
-    int shift = frequency >> sweepShift;
-    if (sweepDirection) {
-      return frequency - shift; // Decrease frequency
-    } else {
-      return frequency + shift; // Increase frequency
     }
   }
 }
@@ -485,6 +504,10 @@ class Channel2 {
   bool enabled = false;
   bool lengthEnabled = false;
   int lengthCounter = 0;
+
+  int waveformPhase = 0; // Tracks the current phase within the waveform cycle
+  int cycleLength =
+      2048; // The default cycle length (can be adjusted based on frequency)
 
   int envelopeSweep = 0;
   int envelopeTimer = 0;
@@ -500,8 +523,26 @@ class Channel2 {
 
   void writeNR21(int value) {
     nrx1 = value;
-    enabled = true;
     // Handle sound length/wave duty update
+    updateCycleLength();
+  }
+
+  void writeNR23(int value) {
+    nrx3 = value;
+    updateFrequency();
+    updateCycleLength();
+  }
+
+  void writeNR24(int value) {
+    nrx4 = value;
+    frequency = (nrx4 & 0x7) << 8 | nrx3; // Update frequency
+    cycleLength = (2048 - frequency) * 4; // Update cycle length
+
+    if ((value & 0x80) != 0) {
+      // If bit 7 is set, reset waveform phase and enable the channel
+      waveformPhase = 0;
+      enabled = true; // Channel is enabled here
+    }
   }
 
   void writeNR22(int value) {
@@ -510,72 +551,86 @@ class Channel2 {
     // Handle volume envelope update
   }
 
-  void writeNR23(int value) {
-    nrx3 = value;
-    enabled = true;
-    // Handle frequency low update
-  }
-
-  void writeNR24(int value) {
-    nrx4 = value;
-    enabled = true;
-    // Handle frequency high and control update
-  }
-
   void reset() {
     nrx1 = 0;
     nrx2 = 0;
     nrx3 = 0;
     nrx4 = 0;
     enabled = false;
+    waveformPhase = 0;
+    cycleLength = 2048;
   }
 
-  /// Tick method for Channel 2, updates the square wave generation.
-  void tick(int delta) {
-    if (!enabled) {
-      return;
-    }
+  /// Updates the cycle length based on the current frequency.
+  void updateCycleLength() {
+    // Calculate the frequency from NR23 (low) and NR24 (high) registers
+    int frequencyValue = (nrx4 & 0x07) << 8 | nrx3;
 
-    // Update frequency, volume, and other properties for the square wave
-    // Implement the envelope and frequency logic
+    // Convert the frequency into a cycle length. Higher frequencies = shorter cycles.
+    if (frequencyValue > 0) {
+      cycleLength = (2048 - frequencyValue) * 4;
+    }
   }
 
-  // Similar to Channel1 but without sweep logic
-  void updateLengthCounter() {
-    if (lengthEnabled && lengthCounter > 0) {
-      lengthCounter--;
-      if (lengthCounter == 0) {
-        enabled = false;
-      }
-    }
+  /// Updates the internal frequency based on NR23 and NR24.
+  void updateFrequency() {
+    frequency = (nrx4 & 0x07) << 8 | nrx3;
   }
 
   void updateEnvelope() {
     if (envelopeSweep > 0) {
       envelopeTimer--;
-      if (envelopeTimer <= 0) {
-        envelopeTimer = envelopeSweep;
-        if (envelopeDirection) {
-          if (volume < 15) {
-            volume++;
-          }
-        } else {
-          if (volume > 0) {
-            volume--;
-          }
+      if (envelopeTimer == 0) {
+        envelopeTimer = envelopeSweep; // Reset timer
+        if (envelopeDirection && volume < 15) {
+          volume++; // Increase volume
+        } else if (!envelopeDirection && volume > 0) {
+          volume--; // Decrease volume
         }
+      }
+    }
+  }
+
+  /// Length counter logic (disables the channel when the length expires).
+  void updateLengthCounter() {
+    if (lengthEnabled && lengthCounter > 0) {
+      lengthCounter--;
+      if (lengthCounter == 0) {
+        enabled = false; // Disable the channel when the length expires
       }
     }
   }
 
   /// Return the current output for this channel.
   int getOutput() {
+    if (!enabled) return 0;
+
+    // Generate square wave: if we are in the first half of the cycle, return high; otherwise, return low
+    if (waveformPhase < cycleLength / 2) {
+      return volume * 2; // High phase of the square wave
+    } else {
+      return -volume * 2; // Low phase of the square wave
+    }
+  }
+
+  void tick(int delta) {
     if (!enabled) {
-      return 0;
+      return;
     }
 
-    // Simplified square wave generation
-    return (sin(nrx3) * nrx2).toInt();
+    // Update waveform phase based on delta (CPU cycles passed)
+    waveformPhase += delta;
+
+    // Reset the phase when the end of the cycle is reached
+    if (waveformPhase >= cycleLength) {
+      waveformPhase = 0; // Reset phase at the end of the waveform cycle
+    }
+
+    // Handle the envelope update (adjust volume over time)
+    updateEnvelope();
+
+    // Handle length counter (used to disable the channel after a certain period)
+    updateLengthCounter();
   }
 }
 
@@ -590,36 +645,91 @@ class Channel3 {
   bool lengthEnabled = false;
   int lengthCounter = 0;
 
+  int waveformPhase = 0; // Tracks the current phase within the waveform cycle
+  int outputLevel = 0; // Current output level (volume)
+  int frequency = 0; // Current frequency
+
   int readNR30() => nrx0 | 0x7F;
   int readNR31() => nrx1 | 0xFF;
   int readNR32() => nrx2 | 0x9F;
   int readNR33() => nrx3 | 0xFF;
   int readNR34() => nrx4 | 0xBF;
 
+  /// NR30: Sound ON/OFF
   void writeNR30(int value) {
     nrx0 = value;
-    // Handle sound on/off
+
+    // If bit 7 is set, the channel is enabled (sound ON), otherwise, it's OFF
     enabled = (nrx0 & 0x80) != 0;
+
+    // If the channel is disabled, reset its state
+    if (!enabled) {
+      reset();
+    }
   }
 
+  /// NR31: Sound Length
   void writeNR31(int value) {
     nrx1 = value;
-    // Handle sound length update
+
+    // The length is set based on the lower 8 bits of nrx1 (total length = 256 steps)
+    lengthCounter = 256 - value; // Length of the waveform playback in steps
   }
 
+  /// NR32: Output Level (Volume Control)
   void writeNR32(int value) {
     nrx2 = value;
-    // Handle output level update
+
+    // Output level (volume control) is determined by bits 5 and 6 of nrx2
+    // 00 = Mute (no sound), 01 = 100% volume, 10 = 50% volume, 11 = 25% volume
+    switch ((nrx2 >> 5) & 0x03) {
+      case 0:
+        outputLevel = 0; // Mute
+        break;
+      case 1:
+        outputLevel = 100; // Full volume
+        break;
+      case 2:
+        outputLevel = 50; // Half volume
+        break;
+      case 3:
+        outputLevel = 25; // Quarter volume
+        break;
+    }
   }
 
+  /// NR33: Frequency Low (lower 8 bits of frequency)
   void writeNR33(int value) {
     nrx3 = value;
-    // Handle frequency low update
+
+    // Combine NR33 (lower 8 bits) and NR34 (upper 3 bits) to update the full frequency
+    frequency = (nrx4 & 0x07) << 8 | nrx3;
   }
 
+  /// NR34: Frequency High and Control
   void writeNR34(int value) {
     nrx4 = value;
-    // Handle frequency high and control update
+
+    // Combine NR33 (lower 8 bits) and NR34 (upper 3 bits) to update the full frequency
+    frequency = (nrx4 & 0x07) << 8 | nrx3;
+
+    // If bit 7 is set, trigger the sound (restart the waveform playback)
+    if ((nrx4 & 0x80) != 0) {
+      restartWaveform();
+      enabled = true;
+    }
+
+    // If bit 6 is set, enable the length counter
+    lengthEnabled = (nrx4 & 0x40) != 0;
+  }
+
+  /// Helper method to restart the waveform playback
+  void restartWaveform() {
+    // Reset the phase of the waveform
+    waveformPhase = 0;
+
+    // Enable the channel
+    enabled = true;
   }
 
   void reset() {
@@ -671,6 +781,8 @@ class Channel4 {
   bool enabled = false;
   bool lengthEnabled = false;
   int lengthCounter = 0;
+  int lfsr = 0x7FFF; // 15-bit LFSR starting state
+  int polynomialCounter = 0; // Polynomial counter (NR43)
 
   int envelopeSweep = 0;
   int envelopeTimer = 0;
@@ -682,24 +794,73 @@ class Channel4 {
   int readNR43() => nrx3;
   int readNR44() => nrx4 | 0xBF;
 
+  /// NR41: Sound length (64 steps)
   void writeNR41(int value) {
     nrx1 = value;
-    // Handle sound length update
+    lengthCounter = 64 - (value & 0x3F); // Update length counter (6-bit value)
   }
 
+  /// NR42: Volume envelope
   void writeNR42(int value) {
     nrx2 = value;
-    // Handle volume envelope update
+    volume = (value >> 4) & 0xF; // Initial volume (4 bits)
+    envelopeDirection =
+        (value & 0x08) != 0; // Envelope direction (1: increase, 0: decrease)
+    envelopeSweep = value & 0x07; // Envelope sweep time (3 bits)
+
+    if (envelopeSweep == 0) {
+      envelopeSweep = 8; // When set to 0, behaves as 8 steps
+    }
+
+    envelopeTimer = envelopeSweep; // Reset envelope timer
   }
 
+  /// NR43: Polynomial counter
   void writeNR43(int value) {
     nrx3 = value;
-    // Handle polynomial counter update
+
+    // Extract and set polynomial counter divisor (controls frequency)
+    int divisorCode = value & 0x7; // Lower 3 bits control the divisor
+    int shiftClockFreq =
+        (value >> 4) & 0xF; // Upper 4 bits for shift clock frequency
+
+    // Determine the divisor value based on the divisor code
+    int divisor = divisorCode == 0 ? 8 : divisorCode * 16;
+
+    // Polynomial counter divisor behavior is frequency related
+    // The noise frequency is affected by both the divisor and shiftClockFreq
+    polynomialCounter = divisor << shiftClockFreq;
+
+    // LFSR width control: 0 for 15-bit LFSR, 1 for 7-bit LFSR
+    bool lfsrWidth = (value & 0x08) != 0;
+
+    // Set LFSR mode: 15-bit or 7-bit
+    if (lfsrWidth) {
+      // 7-bit LFSR mode (only the lower 7 bits of the LFSR are used)
+      lfsr &= 0x7F; // Clear upper bits and use only the lower 7 bits
+    } else {
+      // 15-bit LFSR mode (use the full 15 bits of the LFSR)
+      lfsr &= 0x7FFF; // Use the full 15-bit value for LFSR
+    }
+
+    // Noise frequency updates will depend on the divisor and shiftClockFreq
+    // Higher shiftClockFreq results in faster noise generation.
+    // The polynomial counter and LFSR state will drive the noise waveform.
   }
 
+  /// NR44: Counter/consecutive and initial
   void writeNR44(int value) {
     nrx4 = value;
-    // Handle counter/consecutive and initial settings
+
+    // If bit 7 is set, reset length counter and envelope
+    if ((value & 0x80) != 0) {
+      lengthCounter = 64; // Reset length counter
+      envelopeTimer = envelopeSweep; // Reset envelope
+      enabled = true; // Enable the channel here
+    }
+
+    // Length counter enable (bit 6)
+    lengthEnabled = (value & 0x40) != 0;
   }
 
   void reset() {
@@ -708,6 +869,7 @@ class Channel4 {
     nrx3 = 0;
     nrx4 = 0;
     enabled = false;
+    lfsr = 0x7FFF; // Reset the LFSR
   }
 
   /// Tick method for Channel 4 (Noise channel)
@@ -716,7 +878,29 @@ class Channel4 {
       return;
     }
 
-    // Update noise generation logic based on polynomial counter and envelope
+    // Update length counter to disable the channel if the length expires
+    updateLengthCounter();
+
+    // Update envelope (adjusts volume over time)
+    updateEnvelope();
+
+    // Update noise generation based on the polynomial counter logic
+    // This is influenced by the divisor and shift clock frequency
+    polynomialCounter -= delta;
+
+    // When the polynomial counter reaches zero, it's time to generate the next noise sample
+    if (polynomialCounter <= 0) {
+      // Reset the polynomial counter based on the divisor and shift clock frequency
+      int shiftClockFreq = (nrx3 >> 4) & 0xF;
+      int divisorCode = nrx3 & 0x7;
+
+      // The actual frequency is calculated as (2^shiftClockFreq) * divisor
+      int divisor = divisorCode == 0 ? 8 : divisorCode * 16;
+      polynomialCounter = divisor << shiftClockFreq;
+
+      // Generate the next noise sample using the LFSR
+      generateNoise();
+    }
   }
 
   // Length counter logic
@@ -748,15 +932,23 @@ class Channel4 {
     }
   }
 
+  int generateNoise() {
+    int feedback = (lfsr ^ (lfsr >> 1)) & 1;
+    lfsr = (lfsr >> 1) | (feedback << 14);
+    return feedback * 2 - 1; // Convert 0/1 to -1/1 for noise output
+  }
+
   /// Return the current output for this channel.
   int getOutput() {
     if (!enabled) {
       return 0;
     }
 
-    // Simplified noise channel output
-    return (randomNoise(nrx3) * nrx2)
-        .toInt(); // A simple random noise generator example
+    // Call the noise generator based on the LFSR
+    int noiseOutput = generateNoise();
+
+    // Scale the noise output by the current volume envelope
+    return noiseOutput * volume;
   }
 
   /// Simulate a noise generator (polynomial counter-based noise)
