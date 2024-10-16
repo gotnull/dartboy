@@ -27,6 +27,12 @@
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
 		33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F42044A3C60003C045 /* MainMenu.xib */; };
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
+		BDA8D2E92CC07841002DA658 /* libaudio.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = BDA8D2E82CC07841002DA658 /* libaudio.dylib */; settings = {ATTRIBUTES = (Weak, ); }; };
+		BDA8D2EA2CC07854002DA658 /* libaudio.dylib in Resources */ = {isa = PBXBuildFile; fileRef = BDA8D2E82CC07841002DA658 /* libaudio.dylib */; };
+		BDA8D2EB2CC078B8002DA658 /* libaudio.dylib in Bundle Framework */ = {isa = PBXBuildFile; fileRef = BDA8D2E82CC07841002DA658 /* libaudio.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		BDA8D2ED2CC0799A002DA658 /* libSDL2-2.0.0.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = BDA8D2EC2CC0799A002DA658 /* libSDL2-2.0.0.dylib */; settings = {ATTRIBUTES = (Weak, ); }; };
+		BDA8D2EE2CC079C0002DA658 /* libSDL2-2.0.0.dylib in Resources */ = {isa = PBXBuildFile; fileRef = BDA8D2EC2CC0799A002DA658 /* libSDL2-2.0.0.dylib */; };
+		BDA8D2EF2CC079D2002DA658 /* libSDL2-2.0.0.dylib in Bundle Framework */ = {isa = PBXBuildFile; fileRef = BDA8D2EC2CC0799A002DA658 /* libSDL2-2.0.0.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		D205C75AC81BEABC7FE488A8 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 273FD02305531CDF56C47362 /* Pods_Runner.framework */; };
 		F769A6E4EE6DB33F8C45CA3F /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C9E46245F8D68413C84D52A7 /* Pods_RunnerTests.framework */; };
 /* End PBXBuildFile section */
@@ -55,6 +61,8 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
+				BDA8D2EF2CC079D2002DA658 /* libSDL2-2.0.0.dylib in Bundle Framework */,
+				BDA8D2EB2CC078B8002DA658 /* libaudio.dylib in Bundle Framework */,
 			);
 			name = "Bundle Framework";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -86,6 +94,8 @@
 		85FD3D3088737668F706111B /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		88D47E4AF8C7FB1EA8DC0A8B /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		BDA8D2E82CC07841002DA658 /* libaudio.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = libaudio.dylib; sourceTree = "<group>"; };
+		BDA8D2EC2CC0799A002DA658 /* libSDL2-2.0.0.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = "libSDL2-2.0.0.dylib"; sourceTree = "<group>"; };
 		C9E46245F8D68413C84D52A7 /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		CE444146FB74C977084146EA /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -103,7 +113,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BDA8D2ED2CC0799A002DA658 /* libSDL2-2.0.0.dylib in Frameworks */,
 				D205C75AC81BEABC7FE488A8 /* Pods_Runner.framework in Frameworks */,
+				BDA8D2E92CC07841002DA658 /* libaudio.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -195,7 +207,6 @@
 				126F7920045A8E528241477C /* Pods-RunnerTests.release.xcconfig */,
 				88D47E4AF8C7FB1EA8DC0A8B /* Pods-RunnerTests.profile.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -204,6 +215,8 @@
 			children = (
 				273FD02305531CDF56C47362 /* Pods_Runner.framework */,
 				C9E46245F8D68413C84D52A7 /* Pods_RunnerTests.framework */,
+				BDA8D2E82CC07841002DA658 /* libaudio.dylib */,
+				BDA8D2EC2CC0799A002DA658 /* libSDL2-2.0.0.dylib */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -317,6 +330,8 @@
 			files = (
 				33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */,
 				33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */,
+				BDA8D2EA2CC07854002DA658 /* libaudio.dylib in Resources */,
+				BDA8D2EE2CC079C0002DA658 /* libSDL2-2.0.0.dylib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -579,6 +594,10 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
 			};
@@ -711,6 +730,10 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -730,6 +753,10 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
 				);
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;

@@ -1,21 +1,46 @@
-import 'dart:io';
+import 'dart:async';
+import 'dart:ffi';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:dartboy/emulator/cpu/cpu.dart';
 import 'package:dartboy/emulator/memory/memory_registers.dart';
+import 'package:ffi/ffi.dart';
+
+// Load the dynamic library
+final DynamicLibrary audioLib = DynamicLibrary.open('libaudio.dylib');
+
+// FFI function bindings
+typedef InitAudioNative = Int32 Function(
+    Int32 sampleRate, Int32 channels, Int32 bufferSize);
+typedef InitAudioDart = int Function(
+    int sampleRate, int channels, int bufferSize);
+
+typedef StreamAudioNative = Void Function(Pointer<Uint8> buffer, Int32 length);
+typedef StreamAudioDart = void Function(Pointer<Uint8> buffer, int length);
+
+typedef TerminateAudioNative = Void Function();
+typedef TerminateAudioDart = void Function();
+
+// Dart bindings for C functions in the library
+final InitAudioDart initAudio =
+    audioLib.lookup<NativeFunction<InitAudioNative>>('init_audio').asFunction();
+
+final StreamAudioDart streamAudio = audioLib
+    .lookup<NativeFunction<StreamAudioNative>>('stream_audio')
+    .asFunction();
+
+final TerminateAudioDart terminateAudio = audioLib
+    .lookup<NativeFunction<TerminateAudioNative>>('terminate_audio')
+    .asFunction();
 
 class Audio {
   // Clock cycle accumulator for timing updates
   int clockCycleAccumulator = 0;
   int frameSequencer = 0;
-  int divApu = 0;
-  int mCycles = 0;
-  int frameSequencerStep = 0; // Track the current step in the frame sequencer
 
   int sampleRate = 44100; // Set your sample rate here
-  List<int> audioBuffer = [];
-  RandomAccessFile? audioFile; // The file to write audio samples to
-  int totalSamplesWritten = 0;
-  bool isWritingToFile = false;
+  int bufferSize = 2048;
+  int previousSample = 0;
 
   // Flag to indicate if recording is active
   bool recording = false;
@@ -25,9 +50,80 @@ class Audio {
   Channel2 channel2 = Channel2();
   Channel3 channel3 = Channel3();
   Channel4 channel4 = Channel4();
+
   int nr50 = 0;
   int nr51 = 0;
   int nr52 = 0;
+
+  // Audio initialization state
+  bool isInitialized = false;
+  int channels = 2; // Stereo sound
+
+  // Init function to set up the player
+  Future<void> init() async {
+    // Initialize SDL2 audio with the defined sample rate and buffer size
+    int result = initAudio(sampleRate, channels, bufferSize);
+    if (result != 0) {
+      print('Failed to initialize audio.');
+      return;
+    }
+    isInitialized = true;
+  }
+
+  void tick(int delta) {
+    if (!isInitialized) return;
+
+    clockCycleAccumulator += delta;
+
+    // Process sound channels
+    channel1.tick(delta);
+    channel2.tick(delta);
+    channel3.tick(delta);
+    channel4.tick(delta);
+
+    // Generate an audio sample at the correct rate
+    if (clockCycleAccumulator >= CPU.frequency ~/ sampleRate) {
+      int mixedOutput = mixAudioChannels();
+      //mixedOutput = applyLowPassFilter(mixedOutput);
+
+      Uint8List audioData = convertToPCM(mixedOutput);
+
+      // Stream the audio data to SDL2
+      final Pointer<Uint8> bufferPtr = malloc.allocate<Uint8>(audioData.length);
+      bufferPtr.asTypedList(audioData.length).setAll(0, audioData);
+      streamAudio(bufferPtr, audioData.length);
+      malloc.free(bufferPtr);
+
+      // Reset clock accumulator for the next sample
+      clockCycleAccumulator -= CPU.frequency ~/ sampleRate;
+    }
+  }
+
+  int applyLowPassFilter(int currentSample) {
+    int filteredSample = (previousSample + currentSample) ~/ 2;
+    previousSample = currentSample;
+    return filteredSample;
+  }
+
+  /// Converts mixed audio output to PCM format
+  Uint8List convertToPCM(int mixedOutput) {
+    // Scale the mixed output from Gameboy's 4-bit range to 16-bit signed range
+    int scaledOutput =
+        (mixedOutput * 32767) ~/ 15; // Scale from 0-15 to -32768 to 32767
+
+    // Convert to 16-bit signed PCM format (little-endian)
+    return Uint8List(2)
+      ..[0] = scaledOutput & 0xFF // Low byte
+      ..[1] = (scaledOutput >> 8) & 0xFF; // High byte
+  }
+
+  // Stop the audio system
+  Future<void> stopAudio() async {
+    if (isInitialized) {
+      terminateAudio();
+      isInitialized = false;
+    }
+  }
 
   /// Reset the audio system (this is called during CPU reset)
   void reset() {
@@ -94,139 +190,13 @@ class Audio {
     left = (left * ((nr50 >> 4) & 0x07)) ~/ 7;
     right = (right * (nr50 & 0x07)) ~/ 7;
 
-    // Clamp and return mixed output
+    // Check if all channels are silent
+    if (left == 0 && right == 0) {
+      return 0; // Output silence when no audio is playing
+    }
+
+    // Return the mixed output, clamped to 16-bit PCM range
     return (left + right).clamp(-32768, 32767);
-  }
-
-  void tick(int delta) {
-    clockCycleAccumulator += delta;
-
-    channel1.tick(delta);
-    channel2.tick(delta);
-    channel3.tick(delta);
-    channel4.tick(delta);
-
-    // Update the frame sequencer at 512 Hz (each step has its own frequency)
-    frameSequencer += delta;
-    if (frameSequencer >= CPU.frequency / 512) {
-      frameSequencer = 0;
-
-      // Each channel should update its envelope on the 64 Hz step (every 8 frame sequencer steps)
-      if (frameSequencerStep % 8 == 7) {
-        channel1.updateEnvelope();
-        channel2.updateEnvelope();
-        channel4.updateEnvelope();
-      }
-
-      // Move to the next frame sequencer step
-      frameSequencerStep = (frameSequencerStep + 1) % 8;
-    }
-
-    // Check if it's time to process audio samples
-    if (recording && clockCycleAccumulator >= CPU.frequency ~/ sampleRate) {
-      // Mix audio from all channels
-      int mixedOutput = mixAudioChannels();
-      mixedOutput = mixedOutput.clamp(
-          -32768, 32767); // Clamp the mixed output within the valid range
-
-      // Add the mixed audio output to the buffer
-      audioBuffer.add(mixedOutput);
-
-      // Reset the accumulator for the next audio sample
-      clockCycleAccumulator -= CPU.frequency ~/ sampleRate;
-    }
-
-    // print("Clock Cycle Accumulator: $clockCycleAccumulator");
-    // print("Audio Buffer Size: ${audioBuffer.length}");
-  }
-
-  /// Starts recording audio
-  Future<void> startRecording() async {
-    // Clear the buffer and reset the total sample count
-    audioBuffer.clear();
-    totalSamplesWritten = 0;
-
-    // Open the file to write audio data
-    audioFile = await File("output.wav").open(mode: FileMode.write);
-
-    // Write a placeholder WAV header (we'll overwrite this later with the correct size)
-    await audioFile!.writeFrom(_generateWaveHeader(0));
-
-    // Set recording to active
-    recording = true;
-  }
-
-  /// Stops recording and writes the buffer to the file
-  Future<void> stopRecording() async {
-    if (audioFile != null) {
-      // Set recording to inactive
-      recording = false;
-
-      // Flush remaining audio data to the file
-      await _flushAudioBuffer();
-
-      // Go back and update the WAV header with the correct size info
-      await audioFile!.setPosition(0);
-      await audioFile!.writeFrom(_generateWaveHeader(totalSamplesWritten));
-
-      // Close the file
-      await audioFile!.close();
-      audioFile = null;
-    }
-  }
-
-  /// Flush the audio buffer to the file
-  Future<void> _flushAudioBuffer() async {
-    if (audioBuffer.isEmpty || audioFile == null) return;
-
-    // Convert the audio buffer to bytes
-    List<int> byteBuffer = [];
-    for (int sample in audioBuffer) {
-      byteBuffer.add(sample & 0xFF); // Write low byte
-      byteBuffer.add((sample >> 8) & 0xFF); // Write high byte
-    }
-
-    // Write the buffer to the file
-    await audioFile!.writeFrom(byteBuffer);
-
-    // Increment the total samples written
-    totalSamplesWritten += audioBuffer.length;
-
-    // Clear the buffer
-    audioBuffer.clear();
-  }
-
-  /// Generate the WAV header based on the number of samples written
-  List<int> _generateWaveHeader(int totalSamples) {
-    int byteRate = sampleRate * 2; // 2 bytes per sample
-    int dataSize = totalSamples * 2; // 16-bit (2 bytes per sample)
-
-    return [
-      // "RIFF" chunk descriptor
-      0x52, 0x49, 0x46, 0x46, // Chunk ID ("RIFF")
-      (36 + dataSize) & 0xFF,
-      ((36 + dataSize) >> 8) & 0xFF,
-      ((36 + dataSize) >> 16) & 0xFF,
-      ((36 + dataSize) >> 24) & 0xFF, // Chunk size
-      0x57, 0x41, 0x56, 0x45, // Format ("WAVE")
-
-      // "fmt " sub-chunk
-      0x66, 0x6D, 0x74, 0x20, // Sub-chunk ID ("fmt ")
-      16, 0, 0, 0, // Sub-chunk size (16 for PCM)
-      1, 0, // Audio format (1 for PCM)
-      1, 0, // Number of channels (1 for mono)
-      sampleRate & 0xFF, (sampleRate >> 8) & 0xFF, (sampleRate >> 16) & 0xFF,
-      (sampleRate >> 24) & 0xFF, // Sample rate
-      byteRate & 0xFF, (byteRate >> 8) & 0xFF, (byteRate >> 16) & 0xFF,
-      (byteRate >> 24) & 0xFF, // Byte rate
-      2, 0, // Block align (2 bytes per sample)
-      16, 0, // Bits per sample (16 bits)
-
-      // "data" sub-chunk
-      0x64, 0x61, 0x74, 0x61, // Sub-chunk ID ("data")
-      dataSize & 0xFF, (dataSize >> 8) & 0xFF, (dataSize >> 16) & 0xFF,
-      (dataSize >> 24) & 0xFF // Sub-chunk size
-    ];
   }
 
   /// Read methods for the sound registers
