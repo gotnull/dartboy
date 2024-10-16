@@ -161,13 +161,16 @@ class CPU {
     mmu.writeByte(sp + 1, (value >> 8) & 0xFF);
   }
 
-  ///Increase the clock cycles and trigger interrupts as needed.
+  /// Increase the clock cycles and trigger interrupts as needed.
   void tick(int delta) {
     clocks += delta;
     cyclesSinceLastSleep += delta;
     cyclesExecutedThisSecond += delta;
 
     updateInterrupts(delta);
+
+    // Also tick the audio system
+    audio.tick(delta); // Tick audio to process sound channels
   }
 
   /// Update interrupt counter, check for interruptions waiting.

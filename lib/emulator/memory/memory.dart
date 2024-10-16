@@ -240,6 +240,7 @@ class Memory {
       );
     }
 
+    // Double speed control
     if (address == MemoryRegisters.doubleSpeed) {
       cpu.setDoubleSpeed((value & 0x01) != 0);
     }
@@ -276,8 +277,6 @@ class Memory {
     // Start H-DMA transfer
     else if (address == MemoryRegisters.hdma) {
       if (cpu.cartridge.gameboyType != GameboyType.classic) {
-        // print("Not possible to used H-DMA transfer on GB classic.");
-
         // Get the configuration of the H-DMA transfer
         int length = ((value & 0x7f) + 1) * 0x10;
         int source = ((registers[0x51] & 0xff) << 8) | (registers[0x52] & 0xF0);
@@ -289,10 +288,6 @@ class Memory {
           dma = DMA(this, source, destination, length);
           registers[MemoryRegisters.hdma] = (length ~/ 0x10 - 1) & 0xFF;
         } else {
-          if (dma != null) {
-            // print("Terminated DMA from " + source.toString() + "-" + dest.toString() + ", " + length.toString() + " remaining.");
-          }
-
           // General DMA
           for (int i = 0; i < length; i++) {
             vram[vramPageStart + destination + i] = readByte(source + i) & 0xFF;
@@ -300,18 +295,21 @@ class Memory {
           registers[MemoryRegisters.hdma] = 0xFF;
         }
       }
-    } else if (address == MemoryRegisters.vramBank) {
+    }
+    // Switchable VRAM bank (GBC only)
+    else if (address == MemoryRegisters.vramBank) {
       if (cpu.cartridge.gameboyType == GameboyType.color) {
         vramPageStart = Memory.vramPageSize * (value & 0x3);
       }
-    } else if (address == MemoryRegisters.wramBank) {
+    }
+    // Switchable WRAM bank (GBC only)
+    else if (address == MemoryRegisters.wramBank) {
       if (cpu.cartridge.gameboyType == GameboyType.color) {
         wramPageStart = Memory.wramPageSize * max(1, value & 0x7);
       }
     }
-
-    // Handle gamepad buttons (directional and action buttons)
-    if (address == MemoryRegisters.gamepad) {
+    // Handle gamepad input
+    else if (address == MemoryRegisters.gamepad) {
       int reg = registers[MemoryRegisters.gamepad];
       reg |= 0x0F; // Set the lower 4 bits to 1 (unpressed state)
 
@@ -346,61 +344,11 @@ class Memory {
       }
       registers[address] = reg;
     }
-
-    // Handle audio registers related to Channel 1 (NR10-NR14)
-    if (address == MemoryRegisters.nr10 || // Sound Mode 1 sweep register
-        address ==
-            MemoryRegisters.nr11 || // Sound Mode 1 length/wave duty register
-        address == MemoryRegisters.nr12 || // Sound Mode 1 envelope register
-        address ==
-            MemoryRegisters.nr13 || // Sound Mode 1 frequency low register
-        address == MemoryRegisters.nr14) {
-      // Sound Mode 1 frequency high register (triggers restart)
-      if (address == MemoryRegisters.nr14 && (value & 0x80) != 0) {
-        cpu.audio.channel1.restart(); // Restart Channel 1 when triggered
-      }
-      cpu.audio.channel1.update(); // Always update the channel after a write
+    // Audio Registers (NR10-NR52)
+    else if (address >= MemoryRegisters.nr10 &&
+        address <= MemoryRegisters.nr52) {
+      cpu.audio.writeNR(address, value);
     }
-    // Handle audio registers related to Channel 2 (NR21-NR24)
-    else if (address ==
-            MemoryRegisters.nr21 || // Sound Mode 2 length/wave duty register
-        address == MemoryRegisters.nr22 || // Sound Mode 2 envelope register
-        address ==
-            MemoryRegisters.nr23 || // Sound Mode 2 frequency low register
-        address == MemoryRegisters.nr24) {
-      // Sound Mode 2 frequency high register
-      if (address == MemoryRegisters.nr24 && (value & 0x80) != 0) {
-        cpu.audio.channel2.restart(); // Restart Channel 2
-      }
-      cpu.audio.channel2.update();
-    }
-    // Handle audio registers related to Channel 3 (NR30-NR34)
-    else if (address == MemoryRegisters.nr30 || // Sound Mode 3 on/off register
-        address == MemoryRegisters.nr31 || // Sound Mode 3 length register
-        address == MemoryRegisters.nr32 || // Sound Mode 3 volume register
-        address ==
-            MemoryRegisters.nr33 || // Sound Mode 3 frequency low register
-        address == MemoryRegisters.nr34) {
-      // Sound Mode 3 frequency high register
-      if (address == MemoryRegisters.nr34 && (value & 0x80) != 0) {
-        cpu.audio.channel3.restart(); // Restart Channel 3
-      }
-      cpu.audio.channel3.update();
-    }
-
-    // Handle audio registers related to Channel 4 (NR41-NR44)
-    else if (address == MemoryRegisters.nr41 || // Sound Mode 4 length register
-        address == MemoryRegisters.nr42 || // Sound Mode 4 envelope register
-        address ==
-            MemoryRegisters.nr43 || // Sound Mode 4 polynomial counter register
-        address == MemoryRegisters.nr44) {
-      // Sound Mode 4 counter/consecutive/initial register
-      if (address == MemoryRegisters.nr44 && (value & 0x80) != 0) {
-        cpu.audio.channel4.restart(); // Restart Channel 4
-      }
-      cpu.audio.channel4.update();
-    }
-
     // OAM DMA transfer
     else if (address == MemoryRegisters.dma) {
       int addressBase = value * 0x100;
@@ -408,17 +356,22 @@ class Memory {
       for (int i = 0x00; i < 0xA0; i++) {
         writeByte(0xFE00 + i, readByte(addressBase + i));
       }
-    } else if (address == MemoryRegisters.div) {
+    }
+    // Divider register
+    else if (address == MemoryRegisters.div) {
       value = 0;
-    } else if (address == MemoryRegisters.tac) {
+    }
+    // Timer control (TAC)
+    else if (address == MemoryRegisters.tac) {
       if (((registers[MemoryRegisters.tac] ^ value) & 0x03) != 0) {
         cpu.timerCycle = 0;
         registers[MemoryRegisters.tima] = registers[MemoryRegisters.tma];
       }
-    } else if (address == MemoryRegisters.serialSc) {
+    }
+    // Serial transfer control
+    else if (address == MemoryRegisters.serialSc) {
       // Serial transfer starts if the 7th bit is set
       if (value == 0x81) {
-        // Print data passed through the serial port as character.
         if (Configuration.printSerialCharacters) {
           print(String.fromCharCode(registers[MemoryRegisters.serialSb]));
         }
@@ -438,59 +391,48 @@ class Memory {
 
     if (address == MemoryRegisters.doubleSpeed) {
       return cpu.doubleSpeed ? 0x80 : 0x0;
-    } else if (address == MemoryRegisters.gamepad) {
+    }
+    // Gamepad input handling
+    else if (address == MemoryRegisters.gamepad) {
       int reg = registers[MemoryRegisters.gamepad];
       reg |= 0x0F; // Set the lower 4 bits to 1 (unpressed state)
 
-      // Handle the directional buttons (right, left, up, down)
       if ((reg & 0x10) == 0) {
-        if (cpu.buttons[Gamepad.right]) {
-          reg &= ~0x1;
-        }
-
-        if (cpu.buttons[Gamepad.left]) {
-          reg &= ~0x2;
-        }
-
-        if (cpu.buttons[Gamepad.up]) {
-          reg &= ~0x4;
-        }
-
-        if (cpu.buttons[Gamepad.down]) {
-          reg &= ~0x8;
-        }
+        if (cpu.buttons[Gamepad.right]) reg &= ~0x1;
+        if (cpu.buttons[Gamepad.left]) reg &= ~0x2;
+        if (cpu.buttons[Gamepad.up]) reg &= ~0x4;
+        if (cpu.buttons[Gamepad.down]) reg &= ~0x8;
       }
-      // Handle the action buttons (A, B, Select, Start)
+
       if ((reg & 0x20) == 0) {
-        if (cpu.buttons[Gamepad.A]) {
-          reg &= ~0x1;
-        }
-
-        if (cpu.buttons[Gamepad.B]) {
-          reg &= ~0x2;
-        }
-
-        if (cpu.buttons[Gamepad.select]) {
-          reg &= ~0x4;
-        }
-
-        if (cpu.buttons[Gamepad.start]) {
-          reg &= ~0x8;
-        }
+        if (cpu.buttons[Gamepad.A]) reg &= ~0x1;
+        if (cpu.buttons[Gamepad.B]) reg &= ~0x2;
+        if (cpu.buttons[Gamepad.select]) reg &= ~0x4;
+        if (cpu.buttons[Gamepad.start]) reg &= ~0x8;
       }
 
       return reg;
-    } else if (address == MemoryRegisters.nr52) {
-      // Bit 7 is the sound enable flag, Bits 0-3 are for active sound channels
-      int reg = registers[MemoryRegisters.nr52] &
-          0x80; // Preserve the sound enable flag
-
-      if (cpu.audio.channel1.isPlaying) reg |= 0x01; // Channel 1 playing
-      if (cpu.audio.channel2.isPlaying) reg |= 0x02; // Channel 2 playing
-      if (cpu.audio.channel3.isPlaying) reg |= 0x04; // Channel 3 playing
-      if (cpu.audio.channel4.isPlaying) reg |= 0x08; // Channel 4 playing
-
-      return reg; // Return the status of sound channels
+    }
+    // Background Palette Data
+    else if (address == MemoryRegisters.backgroundPaletteData) {
+      if (cpu.cartridge.gameboyType == GameboyType.color) {
+        int index = registers[MemoryRegisters.backgroundPaletteIndex];
+        int currentRegister = index & 0x3f;
+        return cpu.ppu.getBackgroundPalette(currentRegister);
+      }
+    }
+    // Sprite Palette Data
+    else if (address == MemoryRegisters.spritePaletteData) {
+      if (cpu.cartridge.gameboyType == GameboyType.color) {
+        int index = registers[MemoryRegisters.spritePaletteIndex];
+        int currentRegister = index & 0x3f;
+        return cpu.ppu.getSpritePalette(currentRegister);
+      }
+    }
+    // Audio registers (NR10-NR52): Channel and Sound Control
+    else if (address >= MemoryRegisters.nr10 &&
+        address <= MemoryRegisters.nr52) {
+      return cpu.audio.readNR(address);
     }
 
     return registers[address];

@@ -38,6 +38,7 @@ class MemoryRegisters {
   static const int vramBank = 0x4f;
 
   // Sound registers
+
   // Channel 1: Sweep Register (controls frequency sweep for channel 1)
   static const int nr10 = 0x10;
 
@@ -96,9 +97,10 @@ class MemoryRegisters {
   static const int nr51 = 0x25;
 
   // Sound ON/OFF and Status Register: Master control for enabling/disabling sound and indicating which channels are active
-  // Bit 7: Master Sound Enable (1 = sound is on, 0 = sound is off)
-  // Bits 0-3: Indicates which channels (1-4) are active
   static const int nr52 = 0x26;
+
+  // Output Volume Register (controls left and right master volume for channels)
+  static const int nr50 = 0x24;
 
   // The Tile Data Table address for the background can be selected via LCDC register.
   static const int lcdc = 0x40;

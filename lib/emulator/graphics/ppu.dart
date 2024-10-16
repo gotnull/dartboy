@@ -214,6 +214,18 @@ class PPU {
     );
   }
 
+  // Retrieve the current background palette value.
+  int getBackgroundPalette(int reg) {
+    // Return the value from the background palette memory
+    return gbcBackgroundPaletteMemory[reg];
+  }
+
+  // Retrieve the current sprite palette value.
+  int getSpritePalette(int reg) {
+    // Return the value from the sprite palette memory
+    return gbcSpritePaletteMemory[reg];
+  }
+
   /// Tick the LCD.
   ///
   /// @param cycles The number of CPU cycles elapsed since the last call to tick.
