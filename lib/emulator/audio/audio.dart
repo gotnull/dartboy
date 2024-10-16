@@ -1,10 +1,12 @@
 import 'dart:math';
-import 'package:dartboy/emulator/cpu/cpu.dart';
 import 'package:dartboy/emulator/memory/memory_registers.dart';
 
 class Audio {
   // Clock cycle accumulator for timing updates
   int clockCycleAccumulator = 0;
+  int frameSequencer = 0;
+  int divApu = 0;
+  int mCycles = 0;
 
   // Variables for each channel and overall sound control
   Channel1 channel1 = Channel1();
@@ -18,6 +20,7 @@ class Audio {
   /// Reset the audio system (this is called during CPU reset)
   void reset() {
     clockCycleAccumulator = 0;
+    frameSequencer = 0;
     channel1.reset();
     channel2.reset();
     channel3.reset();
@@ -29,55 +32,41 @@ class Audio {
 
   /// Tick the audio system.
   /// This method updates all audio channels and processes the audio output.
-  /// @param delta Number of CPU cycles elapsed since the last tick
   void tick(int delta) {
     clockCycleAccumulator += delta;
-
-    // Process each channel based on the accumulated clock cycles
     channel1.tick(delta);
     channel2.tick(delta);
     channel3.tick(delta);
     channel4.tick(delta);
 
-    // If enough cycles have passed, mix the output from all channels
-    if (clockCycleAccumulator >= CPU.frequency ~/ 44100) {
-      // 44100 Hz sample rate
-      // Mix the output of all channels
-      int mixedOutput = mixAudioChannels();
+    // Update the frame sequencer every 8192 cycles
+    if (clockCycleAccumulator >= 8192) {
+      frameSequencer = (frameSequencer + 1) % 8;
 
-      // Send mixed output to audio buffer (depends on platform implementation)
-      addToAudioBuffer(mixedOutput);
+      if (frameSequencer == 0 ||
+          frameSequencer == 2 ||
+          frameSequencer == 4 ||
+          frameSequencer == 6) {
+        channel1.updateLengthCounter();
+        channel2.updateLengthCounter();
+        channel3.updateLengthCounter();
+        channel4.updateLengthCounter();
+      }
+      if (frameSequencer == 7) {
+        channel1.updateEnvelope();
+        channel2.updateEnvelope();
+        channel4.updateEnvelope();
+      }
+      if (frameSequencer == 2 || frameSequencer == 6) {
+        channel1.updateSweep();
+      }
 
-      // Reset the cycle accumulator after processing one sample
-      clockCycleAccumulator -= CPU.frequency ~/ 44100;
+      clockCycleAccumulator -= 8192;
     }
   }
 
-  /// Mix the output from all audio channels into a single value.
-  int mixAudioChannels() {
-    // Combine the audio from all active channels
-    int output = 0;
-    output += channel1.getOutput();
-    output += channel2.getOutput();
-    output += channel3.getOutput();
-    output += channel4.getOutput();
-
-    // Ensure the output value is within the valid audio range (-32768 to 32767 for 16-bit audio)
-    output = max(-32768, min(32767, output));
-    return output;
-  }
-
-  /// This method adds the generated audio sample to the audio buffer.
-  /// You may need to implement this based on the platform (e.g., Flutter, Web, etc.).
-  void addToAudioBuffer(int sample) {
-    // Convert the sample to a format suitable for playback (e.g., 16-bit PCM)
-    // Add the sample to the audio output buffer
-    // The actual implementation depends on how you're handling audio output on the platform.
-  }
-
-  // Read methods for the sound registers
+  /// Read methods for the sound registers
   int readNR(int address) {
-    // print("readNR: $address");
     switch (address) {
       case MemoryRegisters.nr10:
         return channel1.readNR10();
@@ -129,9 +118,8 @@ class Audio {
     }
   }
 
-  // Write methods for the sound registers
+  /// Write methods for the sound registers
   void writeNR(int address, int value) {
-    // print("writeNR: $address, value: $value");
     switch (address) {
       case MemoryRegisters.nr10:
         channel1.writeNR10(value);
@@ -205,11 +193,19 @@ class Audio {
     }
   }
 
-  // Handle the NR52 register which controls the sound on/off state
+  /// NR50: Master volume control
+  int readNR50() => nr50;
+  void writeNR50(int value) => nr50 = value;
+
+  /// NR51: Panning control (left/right output)
+  int readNR51() => nr51;
+  void writeNR51(int value) => nr51 = value;
+
+  /// NR52: Sound on/off and channel status
+  int readNR52() => nr52 | 0x70;
   void writeNR52(int value) {
-    value &= 0xF0; // Only upper 4 bits are writable
+    value &= 0xF0;
     if ((value & 0x80) == 0) {
-      // Sound disabled, reset all channels
       channel1.reset();
       channel2.reset();
       channel3.reset();
@@ -218,30 +214,6 @@ class Audio {
       nr51 = 0;
     }
     nr52 = value;
-  }
-
-  // NR50: Master volume control
-  int readNR50() {
-    return nr50; // Return the master volume register
-  }
-
-  void writeNR50(int value) {
-    nr50 = value; // Store the new value for master volume
-  }
-
-  // NR51: Panning control (left/right output)
-  int readNR51() {
-    return nr51; // Return the panning control register
-  }
-
-  void writeNR51(int value) {
-    nr51 = value; // Store the new value for panning control
-  }
-
-  // NR52: Sound on/off and channel status
-  int readNR52() {
-    // Bit 7 is the master sound enable flag, bits 0-3 are for channel status
-    return nr52 | 0x70; // Bit 6 and 5 are always 1, per Gameboy behavior
   }
 }
 
@@ -253,13 +225,28 @@ class Channel1 {
   int nrx3 = 0; // Frequency low
   int nrx4 = 0; // Frequency high + Control
 
+  bool enabled = false;
+  bool lengthEnabled = false;
+  int lengthCounter = 0;
+
+  int envelopeSweep = 0;
+  int envelopeTimer = 0;
+  bool envelopeDirection = false;
+  int volume = 0;
+
+  int sweepTime = 0;
+  int sweepShift = 0;
+  bool sweepDirection = false;
+  bool sweepEnabled = false;
+  int sweepTimer = 0;
+
+  int frequency = 0;
+
   int readNR10() => nrx0 | 0x80;
   int readNR11() => nrx1 | 0x3F;
   int readNR12() => nrx2;
   int readNR13() => nrx3 | 0xFF;
   int readNR14() => nrx4 | 0xBF;
-
-  bool enabled = false;
 
   void writeNR10(int value) {
     nrx0 = value;
@@ -307,6 +294,64 @@ class Channel1 {
     // Implement the envelope, frequency sweep, etc.
   }
 
+  // Length counter logic
+  void updateLengthCounter() {
+    // Only update length counter if the length is enabled
+    if (lengthEnabled && lengthCounter > 0) {
+      lengthCounter--;
+      if (lengthCounter == 0) {
+        enabled = false; // Turn off the channel when length expires
+      }
+    }
+  }
+
+  // Envelope logic
+  void updateEnvelope() {
+    if (envelopeSweep > 0) {
+      envelopeTimer--;
+      if (envelopeTimer <= 0) {
+        envelopeTimer = envelopeSweep; // Reset timer
+        if (envelopeDirection) {
+          if (volume < 15) {
+            volume++; // Increase volume
+          }
+        } else {
+          if (volume > 0) {
+            volume--; // Decrease volume
+          }
+        }
+      }
+    }
+  }
+
+  // Sweep logic (only for Channel 1)
+  void updateSweep() {
+    // Handle frequency sweep, similar to the C code
+    if (sweepTime > 0 && sweepEnabled) {
+      sweepTimer--;
+      if (sweepTimer <= 0) {
+        sweepTimer = sweepTime; // Reset sweep timer
+        // Calculate new frequency and check for overflow
+        int newFrequency = calculateSweepFrequency();
+        if (newFrequency > 2047) {
+          enabled = false; // Disable channel if overflowed
+        } else if (sweepShift > 0) {
+          frequency = newFrequency;
+        }
+      }
+    }
+  }
+
+  // Method to calculate the new frequency during a sweep
+  int calculateSweepFrequency() {
+    int shift = frequency >> sweepShift;
+    if (sweepDirection) {
+      return frequency - shift; // Decrease frequency
+    } else {
+      return frequency + shift; // Increase frequency
+    }
+  }
+
   /// Return the current output for this channel
   int getOutput() {
     if (!enabled) {
@@ -325,6 +370,15 @@ class Channel2 {
   int nrx4 = 0; // Frequency high + Control
 
   bool enabled = false;
+  bool lengthEnabled = false;
+  int lengthCounter = 0;
+
+  int envelopeSweep = 0;
+  int envelopeTimer = 0;
+  bool envelopeDirection = false;
+  int volume = 0;
+
+  int frequency = 0;
 
   int readNR21() => nrx1 | 0x3F;
   int readNR22() => nrx2;
@@ -369,6 +423,34 @@ class Channel2 {
     // Implement the envelope and frequency logic
   }
 
+  // Similar to Channel1 but without sweep logic
+  void updateLengthCounter() {
+    if (lengthEnabled && lengthCounter > 0) {
+      lengthCounter--;
+      if (lengthCounter == 0) {
+        enabled = false;
+      }
+    }
+  }
+
+  void updateEnvelope() {
+    if (envelopeSweep > 0) {
+      envelopeTimer--;
+      if (envelopeTimer <= 0) {
+        envelopeTimer = envelopeSweep;
+        if (envelopeDirection) {
+          if (volume < 15) {
+            volume++;
+          }
+        } else {
+          if (volume > 0) {
+            volume--;
+          }
+        }
+      }
+    }
+  }
+
   /// Return the current output for this channel.
   int getOutput() {
     if (!enabled) {
@@ -388,6 +470,8 @@ class Channel3 {
   int nrx4 = 0; // Frequency high + Control
 
   bool enabled = false;
+  bool lengthEnabled = false;
+  int lengthCounter = 0;
 
   int readNR30() => nrx0 | 0x7F;
   int readNR31() => nrx1 | 0xFF;
@@ -449,6 +533,16 @@ class Channel3 {
     // Simplified wave channel output
     return (sin(nrx3) * nrx2).toInt();
   }
+
+  // No envelope or sweep logic for Channel 3, only length
+  void updateLengthCounter() {
+    if (lengthEnabled && lengthCounter > 0) {
+      lengthCounter--;
+      if (lengthCounter == 0) {
+        enabled = false;
+      }
+    }
+  }
 }
 
 class Channel4 {
@@ -458,6 +552,13 @@ class Channel4 {
   int nrx4 = 0; // Counter/Consecutive; Initial
 
   bool enabled = false;
+  bool lengthEnabled = false;
+  int lengthCounter = 0;
+
+  int envelopeSweep = 0;
+  int envelopeTimer = 0;
+  bool envelopeDirection = false;
+  int volume = 0;
 
   int readNR41() => nrx1 | 0xFF;
   int readNR42() => nrx2;
@@ -499,6 +600,35 @@ class Channel4 {
     }
 
     // Update noise generation logic based on polynomial counter and envelope
+  }
+
+  // Length counter logic
+  void updateLengthCounter() {
+    if (lengthEnabled && lengthCounter > 0) {
+      lengthCounter--;
+      if (lengthCounter == 0) {
+        enabled = false;
+      }
+    }
+  }
+
+  // Envelope logic for noise channel
+  void updateEnvelope() {
+    if (envelopeSweep > 0) {
+      envelopeTimer--;
+      if (envelopeTimer <= 0) {
+        envelopeTimer = envelopeSweep;
+        if (envelopeDirection) {
+          if (volume < 15) {
+            volume++;
+          }
+        } else {
+          if (volume > 0) {
+            volume--;
+          }
+        }
+      }
+    }
   }
 
   /// Return the current output for this channel.
