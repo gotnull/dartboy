@@ -57,6 +57,10 @@ class MemoryRegisters {
   // Channel 2: Sound Length/Wave Duty Register (controls length and duty cycle of the waveform)
   static const int nr21 = 0x16;
 
+  static const int nr15 = 0xFF;
+
+  static const int waveRam = 0x1F;
+
   // Channel 2: Volume Envelope Register (controls volume envelope for channel 2)
   static const int nr22 = 0x17;
 

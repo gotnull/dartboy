@@ -62,7 +62,7 @@ class CPU {
   List<bool> buttons = List.filled(8, false);
 
   /// Current clock speed of the system (can be double on GBC hardware).
-  int clockSpeed = 0;
+  int clockSpeed = frequency;
 
   /// Stores the PC and SP pointers
   List<int> pointers = List.filled(2, 0);
@@ -85,7 +85,8 @@ class CPU {
     mmu = cartridge.createController(this);
     ppu = PPU(this);
     registers = Registers(this);
-    audio = Audio();
+    audio = Audio(clockSpeed);
+    audio.updateClockSpeed(clockSpeed); // Ensure Audio clock sync at start
 
     reset();
   }
@@ -95,6 +96,8 @@ class CPU {
     buttons.fillRange(0, 8, false);
 
     clockSpeed = frequency;
+    audio.updateClockSpeed(clockSpeed); // Ensure Audio is updated after reset
+
     doubleSpeed = false;
     divCycle = 0;
     timerCycle = 0;
@@ -173,6 +176,11 @@ class CPU {
     audio.tick(delta); // Tick audio to process sound channels
   }
 
+  int getActualClockSpeed() {
+    // This could retrieve a clock speed based on system state or configuration
+    return doubleSpeed ? frequency * 2 : frequency;
+  }
+
   /// Update interrupt counter, check for interruptions waiting.
   ///
   /// Trigger timer interrupts, LCD updates, and sound updates as needed.
@@ -205,19 +213,19 @@ class CPU {
       switch (tac & 0x3) {
         // 4096 Hz
         case 0x0:
-          timerPeriod = clockSpeed ~/ 4096;
+          timerPeriod = getActualClockSpeed() ~/ 4096;
           break;
         // 262144 Hz
         case 0x1:
-          timerPeriod = clockSpeed ~/ 262144;
+          timerPeriod = getActualClockSpeed() ~/ 262144;
           break;
         // 65536 Hz
         case 0x2:
-          timerPeriod = clockSpeed ~/ 65536;
+          timerPeriod = getActualClockSpeed() ~/ 65536;
           break;
         // 16384 Hz
         case 0x3:
-          timerPeriod = clockSpeed ~/ 16384;
+          timerPeriod = getActualClockSpeed() ~/ 16384;
           break;
       }
 
@@ -315,7 +323,8 @@ class CPU {
   void setDoubleSpeed(bool doubleSpeed) {
     if (doubleSpeed != doubleSpeed) {
       doubleSpeed = doubleSpeed;
-      clockSpeed = doubleSpeed ? (frequency * 2) : frequency;
+      clockSpeed = getActualClockSpeed(); // Update the current clock speed
+      audio.updateClockSpeed(clockSpeed); // Update audio's clock speed
     }
   }
 

@@ -32,14 +32,8 @@ class Console {
     }
   }
 
-  static int logCounter = 0;
-  static int logLimit = 5000; // Limit log to 5000 lines, adjust as needed
-
   static void logToFile(String message) {
-    if (logCounter < logLimit) {
-      final logFile = File("cpu_log.txt");
-      logFile.writeAsStringSync("$message\n", mode: FileMode.append);
-      logCounter++;
-    }
+    final logFile = File("audio_output_log.txt");
+    logFile.writeAsStringSync("$message\n", mode: FileMode.append);
   }
 }

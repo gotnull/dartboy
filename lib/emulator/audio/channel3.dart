@@ -10,6 +10,9 @@ class Channel3 {
   int lengthCounter = 0; // Length counter
   bool enabled = false; // Whether the channel is currently enabled
   bool lengthEnabled = false; // Length counter enabled flag
+  int volume = 0;
+  int outputLevel = 0;
+  int currentSampleIndex = 0;
 
   int volumeShift = 0; // Volume shift (determines the output level)
   int waveformPhase = 0; // Track the current phase in the waveform cycle
@@ -23,7 +26,10 @@ class Channel3 {
   int readNR30() => nrx0 | 0x7F;
   void writeNR30(int value) {
     nrx0 = value;
-    enabled = (nrx0 & 0x80) != 0; // Bit 7 enables or disables the channel
+
+    // Enable or disable the channel
+    enabled = (value & 0x80) != 0;
+
     if (!enabled) {
       reset(); // Reset the channel when disabled
     }
@@ -33,42 +39,45 @@ class Channel3 {
   int readNR31() => nrx1 | 0xFF;
   void writeNR31(int value) {
     nrx1 = value;
-    lengthCounter = 256 - value; // Length counter (256-step counter)
+
+    // Set length counter (256 steps)
+    lengthCounter = 256 - value;
   }
 
   // NR32: Output Level (NR32)
   int readNR32() => nrx2 | 0x9F;
   void writeNR32(int value) {
     nrx2 = value;
-    // Output level (00 = mute, 01 = full, 10 = half, 11 = quarter)
-    volumeShift = (nrx2 >> 5) & 0x03; // Get the volume level from NR32
+
+    // Output level (00 = mute, 01 = full volume, 10 = half, 11 = quarter)
+    outputLevel = (value >> 5) & 0x03;
   }
 
   // NR33: Frequency Low (NR33)
   int readNR33() => nrx3 | 0xFF;
   void writeNR33(int value) {
     nrx3 = value;
-    frequency =
-        (nrx4 & 0x07) << 8 | nrx3; // Combine NR33 and NR34 for frequency
-    cycleLength =
-        (2048 - frequency) * 2; // Set the cycle length based on the frequency
+
+    // Lower 8 bits of frequency
+    frequency = (nrx4 & 0x07) << 8 | value;
   }
 
   // NR34: Frequency High + Control (NR34)
   int readNR34() => nrx4 | 0xBF;
   void writeNR34(int value) {
     nrx4 = value;
-    frequency =
-        (nrx4 & 0x07) << 8 | nrx3; // Combine NR33 and NR34 for frequency
-    cycleLength =
-        (2048 - frequency) * 2; // Set the cycle length based on the frequency
 
-    if ((nrx4 & 0x80) != 0) {
-      // If bit 7 is set, trigger the channel
-      restartWaveform(); // Restart waveform generation
+    // Higher 3 bits of frequency
+    frequency = (nrx4 & 0x07) << 8 | nrx3;
+
+    if ((value & 0x80) != 0) {
+      // Trigger the channel
+      waveformPhase = 0;
+      enabled = true;
     }
 
-    lengthEnabled = (nrx4 & 0x40) != 0; // Length counter enable (bit 6)
+    // Set length enabled
+    lengthEnabled = (value & 0x40) != 0;
   }
 
   // Restart the waveform generation
@@ -104,11 +113,19 @@ class Channel3 {
 
   // Get the output of Channel 3
   int getOutput() {
-    if (!enabled || volumeShift == 0) return 0;
+    if (!enabled || outputLevel == 0) return 0; // Return 0 if muted or disabled
 
-    // Scale the 4-bit sample to 16-bit output based on the volume shift
-    int output = (sampleBuffer >> (volumeShift - 1)) & 0xF;
-    return (output * 2) - 15; // Convert from 0-15 to -15 to 15
+    // Advance waveform phase based on the cycle length
+    waveformPhase += 1;
+    if (waveformPhase >= cycleLength) {
+      waveformPhase = 0;
+      currentSampleIndex = (currentSampleIndex + 1) % 32;
+      sampleBuffer = waveformData[currentSampleIndex];
+    }
+
+    // Scale output based on the output level from NR32
+    int scaledOutput = (sampleBuffer >> (4 - outputLevel)) & 0xF;
+    return (scaledOutput * 2) - 15; // Normalize to signed value (-15 to 15)
   }
 
   // Reset the state of Channel 3

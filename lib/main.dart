@@ -19,11 +19,7 @@ void main() async {
 Future<void> setWindowSize() async {
   // Set the minimum size for the window to prevent resizing
   await DesktopWindow.setMinWindowSize(
-    const Size(1050, 500),
-  );
-
-  await DesktopWindow.setMaxWindowSize(
-    const Size(1024, 768),
+    const Size(1050, 600),
   );
 }
 

@@ -10,12 +10,14 @@ class Channel1 {
   int cycleLength = 0; // Frequency timer period
   int sweepTimer = 0; // Timer for the frequency sweep
   int envelopeTimer = 0; // Timer for the volume envelope
+  int envelopeSweep = 0;
 
   bool enabled = false; // Whether the channel is currently enabled
   bool sweepEnabled = false; // Sweep enabled flag
   bool envelopeDirection = false; // Whether the envelope increases or decreases
   bool lengthEnabled = false; // Length counter enabled flag
   bool sweepDirection = false; // Sweep direction (true for decreasing)
+  int envelopePeriod = 0;
 
   int lengthCounter = 0; // Length counter
   int volume = 0; // Current volume
@@ -35,7 +37,8 @@ class Channel1 {
     sweepDirection = (value & 0x08) != 0; // 1 = decrease, 0 = increase
     sweepShift = value & 0x07; // Frequency shift
 
-    sweepEnabled = sweepShift > 0 || sweepDirection;
+    // If sweep time is 0, treat it as 8 according to hardware
+    if (sweepPeriod == 0) sweepPeriod = 8;
   }
 
   // NR11: Sound Length/Wave Duty (NR11)
@@ -43,7 +46,9 @@ class Channel1 {
   void writeNR11(int value) {
     nrx1 = value;
     lengthCounter = 64 - (value & 0x3F); // 64-step length counter
-    dutyCycleIndex = (value >> 6) & 0x03; // Duty cycle index (2 bits)
+
+    // Duty cycle: 00, 01, 10, 11 map to 12.5%, 25%, 50%, 75%
+    dutyCycleIndex = (value >> 6) & 0x03;
   }
 
   // NR12: Volume Envelope (NR12)
@@ -51,36 +56,44 @@ class Channel1 {
   void writeNR12(int value) {
     nrx2 = value;
 
-    volume = value >> 4 & 0x0F; // Initial volume
-    envelopeDirection = (value & 0x08) != 0; // 1 = increase, 0 = decrease
-    int envelopePeriod = value & 0x07; // Number of envelope steps
-    if (envelopePeriod == 0) {
-      envelopePeriod = 8; // Period of 0 is treated as 8
-    }
-    envelopeTimer = envelopePeriod;
+    // Volume and envelope settings
+    volume = (value >> 4) & 0x0F; // Initial volume
+    envelopeDirection = (value & 0x08) != 0; // Envelope direction
+    envelopePeriod = value & 0x07; // Envelope sweep period
+
+    // Treat envelope sweep of 0 as 8, as per hardware behavior
+    if (envelopePeriod == 0) envelopePeriod = 8;
   }
 
   // NR13: Frequency low (NR13)
   int readNR13() => nrx3 | 0xFF;
   void writeNR13(int value) {
     nrx3 = value;
-    frequency = (nrx4 & 0x07) << 8 | nrx3; // Combine low and high frequency
-    cycleLength =
-        (2048 - frequency) * 4; // Update cycle length based on frequency
+
+    // Lower 8 bits of frequency
+    frequency = (nrx4 & 0x07) << 8 | value;
   }
 
   // NR14: Frequency high + Control (NR14)
   int readNR14() => nrx4 | 0xBF;
   void writeNR14(int value) {
     nrx4 = value;
-    frequency =
-        (nrx4 & 0x07) << 8 | nrx3; // Combine NR13 and NR14 for frequency
-    cycleLength = (2048 - frequency) * 4; // Update cycle length
 
-    if (value & 0x80 != 0) {
-      trigger(); // Trigger the channel when bit 7 is set
+    // Higher 3 bits of frequency
+    frequency = (nrx4 & 0x07) << 8 | nrx3;
+
+    if ((value & 0x80) != 0) {
+      // Trigger the channel
+      enabled = true;
+      waveformPhase = 0;
+
+      // Reload envelope
+      envelopeTimer = envelopeSweep;
+      volume = (nrx2 >> 4) & 0xF;
+
+      // Set cycle length
+      cycleLength = (2048 - frequency) * 4;
     }
-    lengthEnabled = (value & 0x40) != 0; // Length counter enable (bit 6)
   }
 
   // Trigger the channel (reset length counter, envelope, and sweep)
@@ -162,20 +175,20 @@ class Channel1 {
 
   // Generate the square wave output based on the duty cycle and current phase
   int getOutput() {
-    if (!enabled || volume == 0) {
-      return 0; // Return 0 if the channel is disabled or muted
-    }
+    if (!enabled || volume == 0) return 0;
 
-    // Calculate which phase of the waveform we're in
-    int dutyPattern = dutyCycles[dutyCycleIndex];
+    // Duty cycle determines the high/low pattern of the square wave
+    int dutyCycle = (nrx1 >> 6) & 0x03;
+    int dutyPattern = [0x01, 0x81, 0xC7, 0x7E][dutyCycle];
 
-    // Ensure integer division
-    int phaseIndex =
-        waveformPhase ~/ (cycleLength ~/ 8); // Use integer division
-    bool isHighPhase = (dutyPattern & (1 << phaseIndex)) != 0;
+    // Determine if we're in the high phase of the waveform
+    bool isHighPhase =
+        (dutyPattern & (1 << (waveformPhase ~/ (cycleLength ~/ 8)))) != 0;
 
-    // Return volume based on whether we are in the high or low phase
-    return isHighPhase ? volume : -volume;
+    // Return volume scaled by whether it's in the high or low phase
+    return isHighPhase
+        ? volume * 2
+        : -volume * 2; // Double the volume scaling for better output
   }
 
   // Tick the channel (advance the waveform and handle timing)
