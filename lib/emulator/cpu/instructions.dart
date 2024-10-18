@@ -1,5 +1,6 @@
 import 'package:dartboy/emulator/cpu/cpu.dart';
 import 'package:dartboy/emulator/cpu/registers.dart';
+import 'package:dartboy/emulator/memory/memory_registers.dart';
 
 /// Class to handle instruction implementation, instructions run on top of the CPU object.
 ///
@@ -20,7 +21,6 @@ class Instructions {
     if (cpu.registers.getFlag(0x4 | ((op >> 3) & 0x7))) {
       cpu.pushWordSP(cpu.pc); // Save current PC
       cpu.pc = addr; // Jump to new address
-      cpu.tick(4);
     }
   }
 
@@ -28,7 +28,6 @@ class Instructions {
     int jmp = (cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8));
     cpu.pushWordSP(cpu.pc); // Push the current PC to the stack
     cpu.pc = jmp;
-    cpu.tick(4); // Ensure that the correct number of cycles is added here
   }
 
   static void ldddnn(CPU cpu, int op) {
@@ -84,7 +83,6 @@ class Instructions {
     nsp &= 0xFFFF;
 
     cpu.sp = nsp;
-    cpu.tick(4);
   }
 
   static void scf(CPU cpu) {
@@ -491,7 +489,6 @@ class Instructions {
     int hi = cpu.getUnsignedByte(cpu.sp + 1); // Fetch upper byte from stack
     cpu.sp += 2; // Increment stack pointer
     cpu.pc = (hi << 8) | lo; // Set PC to the value retrieved from stack
-    cpu.tick(4); // Add extra cycles
   }
 
   static void xorn(CPU cpu) {
@@ -519,7 +516,6 @@ class Instructions {
   static void ei(CPU cpu) {
     cpu.enableInterruptsNextCycle =
         true; // Enable interrupts after the next instruction
-    cpu.tick(4); // Delay for 4 cycles
   }
 
   static void di(CPU cpu) {
@@ -530,7 +526,6 @@ class Instructions {
   static void rstp(CPU cpu, int op) {
     cpu.pushWordSP(cpu.pc); // Save current PC on the stack
     cpu.pc = op & 0x38; // Jump to the specific reset vector
-    cpu.tick(4);
   }
 
   static void retc(CPU cpu, int op) {
@@ -539,15 +534,23 @@ class Instructions {
           (cpu.getUnsignedByte(cpu.sp + 1) << 8) | cpu.getUnsignedByte(cpu.sp);
       cpu.sp += 2;
     }
-
-    cpu.tick(4);
   }
 
   static void halt(CPU cpu) {
-    if (!cpu.interruptsEnabled) {
-      // Halt bug: The PC doesn't increase, and the CPU stays in HALT state until an interrupt occurs.
-      cpu.halted = true;
+    // Check if there are pending interrupts
+    int enabledInterrupts =
+        cpu.mmu.readRegisterByte(MemoryRegisters.enabledInterrupts);
+    int requestedInterrupts =
+        cpu.mmu.readRegisterByte(MemoryRegisters.triggeredInterrupts);
+
+    // If interrupts are disabled (IME == false) but an interrupt is requested
+    if (!cpu.interruptsEnabled &&
+        (enabledInterrupts & requestedInterrupts) != 0) {
+      // The "HALT bug" case - skip halting and continue execution
+      // The CPU does not halt but continues execution
+      cpu.halted = false;
     } else {
+      // Normal HALT behavior
       cpu.halted = true;
     }
   }
@@ -561,7 +564,6 @@ class Instructions {
 
     if (cpu.registers.getFlag((op >> 3) & 0x7)) {
       cpu.pc += e;
-      cpu.tick(4);
     }
   }
 
@@ -569,7 +571,6 @@ class Instructions {
     int addr = cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8);
     if (cpu.registers.getFlag(0x4 | ((op >> 3) & 0x7))) {
       cpu.pc = addr; // Jump to new address
-      cpu.tick(4);
     }
   }
 
@@ -620,7 +621,6 @@ class Instructions {
   static void jre(CPU cpu) {
     int e = cpu.nextSignedBytePC();
     cpu.pc += e;
-    cpu.tick(4);
   }
 
   static void or(CPU cpu, int n) {
@@ -860,7 +860,6 @@ class Instructions {
 
   static void jpnn(CPU cpu) {
     cpu.pc = (cpu.nextUnsignedBytePC()) | (cpu.nextUnsignedBytePC() << 8);
-    cpu.tick(4);
   }
 
   static void reti(CPU cpu) {
@@ -868,7 +867,6 @@ class Instructions {
     cpu.pc =
         (cpu.getUnsignedByte(cpu.sp + 1) << 8) | cpu.getUnsignedByte(cpu.sp);
     cpu.sp += 2;
-    cpu.tick(4);
   }
 
   static void lda16sp(CPU cpu) {
@@ -894,7 +892,6 @@ class Instructions {
 
     // Push the higher byte first, then the lower byte onto the stack
     cpu.pushWordSP(val);
-    cpu.tick(4); // Extra cycles for PUSH
   }
 
   static void ldsphl(CPU cpu) {

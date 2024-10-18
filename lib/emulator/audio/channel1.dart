@@ -39,6 +39,11 @@ class Channel1 {
 
     // If sweep time is 0, treat it as 8 according to hardware
     if (sweepPeriod == 0) sweepPeriod = 8;
+
+    // Enable sweep if the shift is non-zero
+    sweepEnabled = (sweepShift > 0);
+
+    print("Sweep enabled: $sweepEnabled, sweepShift: $sweepShift");
   }
 
   // NR11: Sound Length/Wave Duty (NR11)
@@ -72,6 +77,14 @@ class Channel1 {
 
     // Lower 8 bits of frequency
     frequency = (nrx4 & 0x07) << 8 | value;
+
+    // Recalculate cycle length based on frequency
+    if (frequency != 0) {
+      cycleLength = (2048 - frequency) * 4;
+    } else {
+      cycleLength =
+          2048 * 4; // Set a default cycle length to avoid too-small values
+    }
   }
 
   // NR14: Frequency high + Control (NR14)
@@ -87,12 +100,14 @@ class Channel1 {
       enabled = true;
       waveformPhase = 0;
 
-      // Reload envelope
-      envelopeTimer = envelopeSweep;
-      volume = (nrx2 >> 4) & 0xF;
+      // Re-enable the sweep if the shift and period are valid
+      if (sweepShift > 0) {
+        sweepEnabled = true;
+        print("Sweep enabled on channel trigger.");
+      }
 
-      // Set cycle length
-      cycleLength = (2048 - frequency) * 4;
+      // Reload the sweep timer
+      sweepTimer = (sweepPeriod != 0 && sweepEnabled) ? sweepPeriod : 8;
     }
   }
 
@@ -125,7 +140,8 @@ class Channel1 {
 
   // Sweep logic (adjust frequency over time)
   void updateSweep() {
-    if (sweepEnabled && sweepPeriod > 0) {
+    if (sweepEnabled && sweepPeriod > 0 && sweepShift > 0) {
+      // Add check for valid period and shift
       sweepTimer--;
       if (sweepTimer == 0) {
         sweepTimer = sweepPeriod;
@@ -133,9 +149,12 @@ class Channel1 {
         int newFrequency = calculateSweep();
         if (newFrequency > 2047) {
           enabled = false; // Disable if frequency exceeds maximum
-        } else if (sweepShift > 0) {
+          sweepEnabled = false; // Disable sweep if frequency exceeds limit
+          print("Channel1 disabled due to frequency > 0x7FF.");
+        } else {
           frequency = newFrequency;
           cycleLength = (2048 - frequency) * 4;
+          print("Channel1 frequency updated: $frequency");
         }
       }
     }
@@ -144,11 +163,13 @@ class Channel1 {
   // Calculate the next frequency based on the sweep shift and direction
   int calculateSweep() {
     int shiftedFrequency = frequency >> sweepShift;
-    if (sweepDirection) {
-      return frequency - shiftedFrequency; // Decrease frequency
-    } else {
-      return frequency + shiftedFrequency; // Increase frequency
-    }
+    int result = sweepDirection
+        ? frequency - shiftedFrequency
+        : frequency + shiftedFrequency;
+
+    print(
+        "Sweep calculation: frequency = $frequency, shifted = $shiftedFrequency, result = $result");
+    return result;
   }
 
   // Volume envelope logic
@@ -174,14 +195,24 @@ class Channel1 {
   }
 
   // Generate the square wave output based on the duty cycle and current phase
+  // Generate the square wave output based on the duty cycle and current phase
   int getOutput() {
     if (!enabled || volume == 0) return 0;
 
-    // Duty cycle determines the high/low pattern of the square wave
-    int dutyCycle = (nrx1 >> 6) & 0x03;
-    int dutyPattern = [0x01, 0x81, 0xC7, 0x7E][dutyCycle];
+    // Debugging output to see the values
+    // print("Waveform Phase: $waveformPhase, Cycle Length: $cycleLength");
 
-    // Determine if we're in the high phase of the waveform
+    // Ensure cycleLength is not too small to avoid division by zero
+    if (cycleLength < 8) {
+      print(
+          "Error: cycleLength is too small ($cycleLength), returning 0 output.");
+      return 0; // Prevent division by zero with very small cycle length
+    }
+
+    // Use the dutyCycleIndex set in writeNR11 to determine the duty cycle pattern
+    int dutyPattern = [0x01, 0x81, 0xC7, 0x7E][dutyCycleIndex]; // Duty patterns
+
+    // Determine if we're in the high phase of the waveform based on the duty cycle
     bool isHighPhase =
         (dutyPattern & (1 << (waveformPhase ~/ (cycleLength ~/ 8)))) != 0;
 

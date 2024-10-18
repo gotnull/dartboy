@@ -78,15 +78,6 @@ class Channel2 {
     }
   }
 
-  // Trigger the channel (reset length counter, envelope, and frequency)
-  void trigger() {
-    enabled = true;
-    waveformPhase = 0;
-    lengthCounter =
-        lengthCounter == 0 ? 64 : lengthCounter; // Reload length if zero
-    envelopeTimer = envelopeTimer == 0 ? 8 : envelopeTimer; // Reload envelope
-  }
-
   // Length counter logic
   void updateLengthCounter() {
     if (lengthEnabled && lengthCounter > 0) {
@@ -102,10 +93,11 @@ class Channel2 {
     if (envelopeTimer > 0) {
       envelopeTimer--;
       if (envelopeTimer == 0) {
-        envelopeTimer = nrx2 & 0x07; // Reload the timer
+        envelopeTimer = envelopeSweep; // Reload the timer with envelopeSweep
         if (envelopeTimer == 0) {
           envelopeTimer = 8; // Period of 0 is treated as 8
         }
+
         if (envelopeDirection) {
           if (volume < 15) {
             volume++; // Increase volume
@@ -123,18 +115,22 @@ class Channel2 {
   int getOutput() {
     if (!enabled || volume == 0) return 0;
 
+    // Ensure cycleLength is not too small to avoid division by zero
+    if (cycleLength < 8) {
+      print(
+          "Error: cycleLength is too small ($cycleLength), returning 0 output.");
+      return 0;
+    }
+
     // Duty cycle determines the high/low pattern of the square wave
-    int dutyCycle = (nrx1 >> 6) & 0x03;
-    int dutyPattern = [0x01, 0x81, 0xC7, 0x7E][dutyCycle];
+    int dutyPattern = [0x01, 0x81, 0xC7, 0x7E][dutyCycleIndex];
 
     // Determine if we're in the high phase of the waveform
     bool isHighPhase =
         (dutyPattern & (1 << (waveformPhase ~/ (cycleLength ~/ 8)))) != 0;
 
     // Return volume scaled by whether it's in the high or low phase
-    return isHighPhase
-        ? volume * 2
-        : -volume * 2; // Double the volume scaling for better output
+    return isHighPhase ? volume * 2 : -volume * 2;
   }
 
   // Tick the channel (advance the waveform and handle timing)

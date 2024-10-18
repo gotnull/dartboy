@@ -1,5 +1,6 @@
 import 'dart:ffi';
 import 'dart:typed_data';
+import 'package:dartboy/emulator/configuration.dart';
 import 'package:dartboy/emulator/memory/memory_registers.dart';
 import 'package:ffi/ffi.dart';
 import 'channel1.dart';
@@ -69,7 +70,7 @@ class Audio {
       print("Error initialising audio: $result");
       return;
     }
-    isInitialized = true;
+    isInitialized = Configuration.enableAudio;
   }
 
   void updateClockSpeed(int newClockSpeed) {
@@ -104,7 +105,8 @@ class Audio {
   }
 
   void updateFrameSequencer() {
-    // print("Updating frame sequencer: step $frameSequencer");
+    // print(
+    //     "Frame Sequencer Step: $frameSequencer, Cycles: $frameSequencerCycles");
 
     switch (frameSequencer) {
       case 0:
@@ -250,7 +252,7 @@ class Audio {
 
     switch (address) {
       case MemoryRegisters.nr10:
-        channel1.writeNR12(value);
+        channel1.writeNR10(value);
         break;
       case MemoryRegisters.nr11:
         channel1.writeNR11(value);
@@ -320,7 +322,7 @@ class Audio {
           nr50 = 0;
           nr51 = 0;
         }
-        print("NR52 updated: ${nr52.toRadixString(16)}");
+        // print("NR52 updated: ${nr52.toRadixString(16)}");
         break;
     }
   }

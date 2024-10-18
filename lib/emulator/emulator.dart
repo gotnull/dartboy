@@ -175,11 +175,13 @@ class Emulator {
   }
 
   /// Run the emulation at full speed.
-  void run() {
+  void run() async {
     if (state != EmulatorState.ready) {
       print("Emulator not ready, cannot run.");
       return;
     }
+
+    await cpu?.initialize();
 
     state = EmulatorState.running;
 
@@ -205,9 +207,8 @@ class Emulator {
 
         // Execute CPU steps for one frame
         while (cyclesThisFrame < frameCycles) {
-          cpu?.step();
-          cyclesThisFrame +=
-              4; // Assuming each step takes 4 cycles (adjust as needed)
+          int stepCycles = cpu?.step() ?? 4;
+          cyclesThisFrame += stepCycles;
         }
 
         cycles += cyclesThisFrame; // Update total cycles

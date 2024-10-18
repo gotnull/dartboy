@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dartboy/emulator/cpu/instructions.dart';
 import 'package:dartboy/emulator/cpu/registers.dart';
 import 'package:dartboy/emulator/graphics/ppu.dart';
@@ -5,6 +7,7 @@ import 'package:dartboy/emulator/memory/cartridge.dart';
 import 'package:dartboy/emulator/memory/memory_registers.dart';
 import 'package:dartboy/emulator/memory/mmu/mmu.dart';
 import 'package:dartboy/emulator/audio/audio.dart';
+import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// CPU class is responsible for the instruction execution, interrupts, and timing of the system.
@@ -77,6 +80,19 @@ class CPU {
 
   int get sp => pointers[stackPointer];
 
+  late Map<String, dynamic> loadedOpcodes;
+
+  Future<Map<String, dynamic>> loadOpcodesBundle() async {
+    // Load the JSON file using rootBundle
+    final jsonString =
+        await rootBundle.loadString('assets/instructions/opcodes.json');
+    return jsonDecode(jsonString);
+  }
+
+  Future<void> initialize() async {
+    loadedOpcodes = await loadOpcodesBundle();
+  }
+
   CPU(this.cartridge)
       : halted = false,
         interruptsEnabled = false,
@@ -145,10 +161,6 @@ class CPU {
     int value = mmu.readByte(sp); // Read byte from the stack pointer (SP)
     sp = (sp + 1) & 0xFFFF; // Increment SP and wrap around at 16 bits
     return value;
-  }
-
-  void setEnableInterruptsNextCycle(bool value) {
-    enableInterruptsNextCycle = value;
   }
 
   /// Write a byte into memory (takes 4 clocks)
@@ -309,45 +321,7 @@ class CPU {
   }
 
   /// Next step in the CPU processing, should be called at a fixed rate.
-  void step() {
-    execute();
-
-    if (interruptsEnabled) {
-      fireInterrupts();
-    }
-  }
-
-  /// Puts the emulator in and out of double speed mode.
-  ///
-  /// @param doubleSpeed the new double speed state
-  void setDoubleSpeed(bool doubleSpeed) {
-    if (doubleSpeed != doubleSpeed) {
-      doubleSpeed = doubleSpeed;
-      clockSpeed = getActualClockSpeed(); // Update the current clock speed
-      audio.updateClockSpeed(clockSpeed); // Update audio's clock speed
-    }
-  }
-
-  /// Returns a string with debug information on the current status of the CPU.
-  ///
-  /// Returns the current values of all registers, and a history of the instructions executed by the CPU.
-  String getDebugString() {
-    String data = 'Registers:\n';
-    /* data += 'AF: 0x' + registers.af.toRadixString(16) + '\n';
-    data += 'BC: 0x' + registers.bc.toRadixString(16) + '\n';
-    data += 'DE: 0x' + registers.de.toRadixString(16) + '\n';
-    data += 'HL: 0x' + registers.hl.toRadixString(16) + '\n';*/
-
-    data += 'CPU:\n';
-    data += 'PC: 0x${pc.toRadixString(16)}\n';
-    data += 'SP: 0x${sp.toRadixString(16)}\n';
-    data += 'Clocks: $clocks\n';
-
-    return data;
-  }
-
-  /// Decode the instruction, execute it, update the CPU timer variables, check for interrupts.
-  void execute() {
+  int step() {
     if (halted) {
       if (mmu.readRegisterByte(MemoryRegisters.triggeredInterrupts) == 0) {
         clocks += 4;
@@ -358,7 +332,51 @@ class CPU {
 
     int op = nextUnsignedBytePC();
 
-    // print("Executing instruction: 0x${op.toRadixString(16)} at PC: 0x${pc.toRadixString(16)}");
+    // Execute the instruction and get the cycles used
+    int cyclesUsed = executeInstruction(op);
+
+    if (interruptsEnabled) {
+      fireInterrupts();
+    }
+
+    return cyclesUsed;
+  }
+
+  int checkCycleCount(int op) {
+    int cycle = 0;
+
+    // Determine if the opcode is prefixed (CB-prefixed)
+    bool isCBPrefix = op == 0xCB;
+    String opcodeKey =
+        '0x${(isCBPrefix ? (op & 0xFF) : op).toRadixString(16).toUpperCase().padLeft(2, '0')}';
+
+    // Safely fetch the opcode details
+    Map<String, dynamic>? opcodeDetails;
+
+    if (isCBPrefix) {
+      opcodeDetails = loadedOpcodes['cbprefixed'] != null
+          ? loadedOpcodes['cbprefixed']![opcodeKey]
+          : null;
+    } else {
+      opcodeDetails = loadedOpcodes['unprefixed'] != null
+          ? loadedOpcodes['unprefixed']![opcodeKey]
+          : null;
+    }
+
+    // If we found the opcode details, extract the cycle count
+    if (opcodeDetails != null) {
+      List<int> expectedCycles =
+          (opcodeDetails['cycles'] as List).map((e) => e as int).toList();
+      cycle = expectedCycles.first; // Return the first cycle count
+    } else {
+      print('Opcode $opcodeKey not found in opcodes.json');
+    }
+
+    return cycle;
+  }
+
+  int executeInstruction(int op) {
+    int actualCycles = checkCycleCount(op);
 
     switch (op) {
       case 0x00:
@@ -474,8 +492,8 @@ class CPU {
         Instructions.rlca(this);
         break;
       case 0x3c: // A
-      case 0x4: // B
-      case 0xc: // C
+      case 0x04: // B
+      case 0x0c: // C
       case 0x14: // D
       case 0x1c: // E
       case 0x24: // F
@@ -676,7 +694,7 @@ class CPU {
       case 0x3b:
         Instructions.decrr(this, op);
         break;
-      case 0xcb:
+      case 0xCB:
         Instructions.cbprefix(this);
         break;
       default:
@@ -698,5 +716,38 @@ class CPU {
       interruptsEnabled = true;
       enableInterruptsNextCycle = false;
     }
+
+    tick(actualCycles);
+
+    return actualCycles;
+  }
+
+  /// Puts the emulator in and out of double speed mode.
+  ///
+  /// @param doubleSpeed the new double speed state
+  void setDoubleSpeed(bool newDoubleSpeed) {
+    if (doubleSpeed != newDoubleSpeed) {
+      doubleSpeed = newDoubleSpeed;
+      clockSpeed = getActualClockSpeed(); // Update the current clock speed
+      audio.updateClockSpeed(clockSpeed); // Update audio's clock speed
+    }
+  }
+
+  /// Returns a string with debug information on the current status of the CPU.
+  ///
+  /// Returns the current values of all registers, and a history of the instructions executed by the CPU.
+  String getDebugString() {
+    String data = 'Registers:\n';
+    /* data += 'AF: 0x' + registers.af.toRadixString(16) + '\n';
+    data += 'BC: 0x' + registers.bc.toRadixString(16) + '\n';
+    data += 'DE: 0x' + registers.de.toRadixString(16) + '\n';
+    data += 'HL: 0x' + registers.hl.toRadixString(16) + '\n';*/
+
+    data += 'CPU:\n';
+    data += 'PC: 0x${pc.toRadixString(16)}\n';
+    data += 'SP: 0x${sp.toRadixString(16)}\n';
+    data += 'Clocks: $clocks\n';
+
+    return data;
   }
 }

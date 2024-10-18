@@ -15,4 +15,7 @@ class Configuration {
 
   /// Instructions debug info and registers information is printed to the terminal if set true.
   static bool debugInstructions = false;
+
+  /// Debug varible to enable audio.
+  static bool enableAudio = false;
 }
