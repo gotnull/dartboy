@@ -1,157 +1,194 @@
 class Channel3 {
-  int nrx0 = 0; // Sound ON/OFF (NR30)
-  int nrx1 = 0; // Sound Length (NR31)
-  int nrx2 = 0; // Output Level (NR32)
-  int nrx3 = 0; // Frequency low (NR33)
-  int nrx4 = 0; // Frequency high + Control (NR34)
+  // Registers
+  int nr30 = 0; // Sound ON/OFF (NR30)
+  int nr31 = 0; // Sound Length (NR31)
+  int nr32 = 0; // Output Level (NR32)
+  int nr33 = 0; // Frequency low (NR33)
+  int nr34 = 0; // Frequency high + Control (NR34)
 
-  int frequency = 0; // Current frequency
-  int cycleLength = 0; // Frequency timer period
+  // Internal variables
+  int frequency = 0; // Current frequency (11 bits)
+  int frequencyTimer = 0; // Frequency timer
   int lengthCounter = 0; // Length counter
-  bool enabled = false; // Whether the channel is currently enabled
-  bool lengthEnabled = false; // Length counter enabled flag
-  int volume = 0;
-  int outputLevel = 0;
-  int currentSampleIndex = 0;
+  int volumeShift = 0; // Volume shift (0: Mute, 1: 100%, 2: 50%, 3: 25%)
+  int waveformIndex = 0; // Index in the waveform RAM (0-31)
+  int sampleBuffer = 0; // Current sample (4 bits)
+  bool enabled = false; // Channel enabled flag
+  bool dacEnabled = false; // DAC enabled flag
 
-  int volumeShift = 0; // Volume shift (determines the output level)
-  int waveformPhase = 0; // Track the current phase in the waveform cycle
-  int sampleIndex = 0; // Index for the current sample in the waveform
-  int sampleBuffer = 0; // Holds the current waveform sample
+  // Waveform RAM (32 bytes, 64 nibbles)
+  List<int> waveformRAM = List<int>.filled(16, 0); // 16 bytes (32 samples)
 
-  // 32 4-bit waveform samples
-  List<int> waveformData = List<int>.filled(32, 0); // Initialize with 0s
+  // Constructor
+  Channel3();
 
-  // NR30: Sound ON/OFF (NR30)
-  int readNR30() => nrx0 | 0x7F;
+  // NR30: Sound ON/OFF
+  int readNR30() => nr30 | 0x7F; // Bit 7 is read-only
   void writeNR30(int value) {
-    nrx0 = value;
-
-    // Enable or disable the channel
-    enabled = (value & 0x80) != 0;
-
-    if (!enabled) {
-      reset(); // Reset the channel when disabled
+    nr30 = value;
+    dacEnabled = (nr30 & 0x80) != 0;
+    if (!dacEnabled) {
+      enabled = false;
     }
   }
 
-  // NR31: Sound Length (NR31)
-  int readNR31() => nrx1 | 0xFF;
+  // NR31: Sound Length
+  int readNR31() => 0xFF; // Write-only register
   void writeNR31(int value) {
-    nrx1 = value;
-
-    // Set length counter (256 steps)
-    lengthCounter = 256 - value;
+    nr31 = value;
+    lengthCounter = 256 - nr31; // Length counter range: 0-255
   }
 
-  // NR32: Output Level (NR32)
-  int readNR32() => nrx2 | 0x9F;
+  // NR32: Output Level
+  int readNR32() => nr32 | 0x9F; // Bits 0-4 are unused/read-only
   void writeNR32(int value) {
-    nrx2 = value;
-
-    // Output level (00 = mute, 01 = full volume, 10 = half, 11 = quarter)
-    outputLevel = (value >> 5) & 0x03;
+    nr32 = value;
+    volumeShift = (nr32 >> 5) & 0x03;
   }
 
-  // NR33: Frequency Low (NR33)
-  int readNR33() => nrx3 | 0xFF;
+  // NR33: Frequency Low
+  int readNR33() => 0xFF; // Write-only register
   void writeNR33(int value) {
-    nrx3 = value;
-
-    // Lower 8 bits of frequency
-    frequency = (nrx4 & 0x07) << 8 | value;
+    nr33 = value;
+    frequency = (nr34 & 0x07) << 8 | nr33;
   }
 
-  // NR34: Frequency High + Control (NR34)
-  int readNR34() => nrx4 | 0xBF;
+  // NR34: Frequency High and Control
+  int readNR34() => nr34 | 0xBF; // Bits 6-7 are unused/read-only
   void writeNR34(int value) {
-    nrx4 = value;
-
-    // Higher 3 bits of frequency
-    frequency = (nrx4 & 0x07) << 8 | nrx3;
-
-    if ((value & 0x80) != 0) {
-      // Trigger the channel
-      waveformPhase = 0;
-      enabled = true;
+    bool wasLengthEnabled = lengthEnabled;
+    nr34 = value;
+    lengthEnabled = (nr34 & 0x40) != 0;
+    frequency = (nr34 & 0x07) << 8 | nr33;
+    if ((nr34 & 0x80) != 0) {
+      trigger();
     }
-
-    // Set length enabled
-    lengthEnabled = (value & 0x40) != 0;
+    if (!wasLengthEnabled &&
+        lengthEnabled &&
+        lengthCounter == 0 &&
+        frameSequencer == 0) {
+      lengthCounter = 255;
+    }
   }
 
-  // Restart the waveform generation
-  void restartWaveform() {
-    waveformPhase = 0; // Reset phase
-    sampleIndex = 0; // Start from the first sample
-    sampleBuffer = waveformData[sampleIndex]; // Load the first sample
+  // Length counter enabled flag
+  bool lengthEnabled = false;
+
+  // Trigger the channel (on write to NR34 with bit 7 set)
+  void trigger() {
+    enabled = dacEnabled;
+    frequencyTimer = (2048 - frequency) * 2;
+    waveformIndex = 0;
+    lengthCounter = lengthCounter == 0 ? 256 : lengthCounter;
+    sampleBuffer = 0;
   }
 
-  // Length counter logic
+  // Update the frequency timer based on the current frequency
+  void updateFrequencyTimer() {
+    frequencyTimer = (2048 - frequency) * 2;
+  }
+
+  // Update method called every CPU cycle
+  void tick(int cycles) {
+    if (!enabled) return;
+
+    // Frequency timer
+    frequencyTimer -= cycles;
+    while (frequencyTimer <= 0) {
+      frequencyTimer += (2048 - frequency) * 2;
+      advanceWaveform();
+    }
+  }
+
+  // Advance the waveform index and update the sample buffer
+  void advanceWaveform() {
+    waveformIndex = (waveformIndex + 1) % 32; // 32 samples
+    int byteIndex = waveformIndex ~/ 2;
+    int sampleData = waveformRAM[byteIndex];
+
+    if (waveformIndex % 2 == 0) {
+      // High nibble
+      sampleBuffer = (sampleData >> 4) & 0x0F;
+    } else {
+      // Low nibble
+      sampleBuffer = sampleData & 0x0F;
+    }
+  }
+
+  // Update length counter (called by frame sequencer)
   void updateLengthCounter() {
     if (lengthEnabled && lengthCounter > 0) {
       lengthCounter--;
       if (lengthCounter == 0) {
-        enabled = false; // Disable the channel when the length expires
+        enabled = false;
       }
     }
   }
 
-  // Waveform tick function
-  void tick(int delta) {
-    if (!enabled) return;
-
-    waveformPhase += delta; // Advance the phase by the CPU cycles
-
-    // Check if we've reached the end of the current sample cycle
-    if (waveformPhase >= cycleLength) {
-      waveformPhase = 0; // Reset the phase
-      sampleIndex = (sampleIndex + 1) % 32; // Move to the next sample
-      sampleBuffer = waveformData[sampleIndex]; // Load the current sample
-    }
-  }
-
-  // Get the output of Channel 3
+  // Get the output sample for the current state
   int getOutput() {
-    if (!enabled || outputLevel == 0) return 0; // Return 0 if muted or disabled
+    if (!enabled || !dacEnabled) return 0;
 
-    // Advance waveform phase based on the cycle length
-    waveformPhase += 1;
-    if (waveformPhase >= cycleLength) {
-      waveformPhase = 0;
-      currentSampleIndex = (currentSampleIndex + 1) % 32;
-      sampleBuffer = waveformData[currentSampleIndex];
+    int outputLevel;
+    switch (volumeShift) {
+      case 0:
+        outputLevel = 0; // Mute
+        break;
+      case 1:
+        outputLevel = sampleBuffer; // 100%
+        break;
+      case 2:
+        outputLevel = sampleBuffer >> 1; // 50%
+        break;
+      case 3:
+        outputLevel = sampleBuffer >> 2; // 25%
+        break;
+      default:
+        outputLevel = 0;
+        break;
     }
 
-    // Scale output based on the output level from NR32
-    int scaledOutput = (sampleBuffer >> (4 - outputLevel)) & 0xF;
-    return (scaledOutput * 2) - 15; // Normalize to signed value (-15 to 15)
+    // Convert to signed value (-8 to +7)
+    outputLevel -= 8;
+    return outputLevel;
   }
 
-  // Reset the state of Channel 3
+  // Read from Waveform RAM (0xFF30 - 0xFF3F)
+  int readWaveformRAM(int address) {
+    int index = address - 0xFF30;
+    return waveformRAM[index];
+  }
+
+  // Write to Waveform RAM (0xFF30 - 0xFF3F)
+  void writeWaveformRAM(int address, int value) {
+    int index = address - 0xFF30;
+    waveformRAM[index] = value & 0xFF;
+  }
+
+  // Reset the channel
   void reset() {
-    nrx0 = 0;
-    nrx1 = 0;
-    nrx2 = 0;
-    nrx3 = 0;
-    nrx4 = 0;
+    nr30 = 0;
+    nr31 = 0;
+    nr32 = 0;
+    nr33 = 0;
+    nr34 = 0;
     frequency = 0;
-    enabled = false;
-    volumeShift = 0;
-    lengthCounter = 0;
-    waveformPhase = 0;
-    sampleIndex = 0;
+    frequencyTimer = 0;
+    waveformIndex = 0;
     sampleBuffer = 0;
-    waveformData.fillRange(0, waveformData.length, 0); // Clear waveform data
+    lengthCounter = 0;
+    volumeShift = 0;
+    enabled = false;
+    dacEnabled = false;
+    lengthEnabled = false;
+    waveformRAM.fillRange(0, waveformRAM.length, 0);
   }
 
-  // Handle waveform memory reads
-  int readWaveform(int address) {
-    return waveformData[address % 32];
-  }
+  // Frame sequencer reference (needs to be set from Audio class)
+  int frameSequencer = 0;
 
-  // Handle waveform memory writes
-  void writeWaveform(int address, int value) {
-    waveformData[address % 32] = value & 0xFF; // 8-bit waveform sample
+  // Set frame sequencer value (called from Audio class)
+  void setFrameSequencer(int value) {
+    frameSequencer = value;
   }
 }

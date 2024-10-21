@@ -1,256 +1,239 @@
 class Channel1 {
-  int nrx0 = 0; // Sweep (NR10)
-  int nrx1 = 0; // Sound Length/Wave Duty (NR11)
-  int nrx2 = 0; // Volume Envelope (NR12)
-  int nrx3 = 0; // Frequency low (NR13)
-  int nrx4 = 0; // Frequency high + Control (NR14)
+  // Registers
+  int nr10 = 0; // Sweep (NR10)
+  int nr11 = 0; // Sound Length/Wave Duty (NR11)
+  int nr12 = 0; // Volume Envelope (NR12)
+  int nr13 = 0; // Frequency low (NR13)
+  int nr14 = 0; // Frequency high + Control (NR14)
 
-  int frequency = 0; // Current frequency
-  int waveformPhase = 0; // Track the current phase of the waveform
-  int cycleLength = 0; // Frequency timer period
+  // Internal variables
+  int frequency = 0; // Current frequency (11 bits)
+  int frequencyTimer = 0; // Frequency timer
+  int waveformIndex = 0; // Current position in waveform (0-7)
   int sweepTimer = 0; // Timer for the frequency sweep
   int envelopeTimer = 0; // Timer for the volume envelope
-  int envelopeSweep = 0;
+  int lengthCounter = 0; // Length counter
+  int volume = 0; // Current volume (0-15)
 
-  bool enabled = false; // Whether the channel is currently enabled
-  bool sweepEnabled = false; // Sweep enabled flag
-  bool envelopeDirection = false; // Whether the envelope increases or decreases
-  bool lengthEnabled = false; // Length counter enabled flag
-  bool sweepDirection = false; // Sweep direction (true for decreasing)
+  // Sweep variables
+  bool sweepEnabled = false;
+  bool sweepNegate =
+      false; // Sweep direction (false for increase, true for decrease)
+  int sweepPeriod = 0;
+  int sweepShift = 0;
+  int shadowFrequency = 0;
+
+  // Envelope variables
+  bool envelopeIncrease = false; // Envelope direction (true for increase)
   int envelopePeriod = 0;
 
-  int lengthCounter = 0; // Length counter
-  int volume = 0; // Current volume
-  int sweepShift = 0; // Frequency sweep shift
-  int sweepPeriod = 0; // Sweep time period
-  int initialFrequency = 0; // The initial frequency at trigger
+  // Length counter enabled flag
+  bool lengthEnabled = false;
 
-  int dutyCycleIndex = 0; // Index for duty cycle
-  List<int> dutyCycles = [0x01, 0x81, 0xC7, 0x7E];
+  // Channel enabled flag
+  bool enabled = false;
 
-  // NR10: Sweep (NR10)
-  int readNR10() => nrx0 | 0x80;
+  // Duty cycle variables
+  int dutyCycle = 0; // Duty cycle index (0-3)
+  static const List<List<int>> dutyPatterns = [
+    [0, 1, 0, 0, 0, 0, 0, 0], // 12.5%
+    [0, 1, 1, 0, 0, 0, 0, 0], // 25%
+    [0, 1, 1, 1, 1, 0, 0, 0], // 50%
+    [1, 0, 0, 0, 0, 1, 1, 1], // 75%
+  ];
+
+  // DAC enabled flag (determined by NR12)
+  bool dacEnabled = false;
+
+  // Constructor
+  Channel1();
+
+  // NR10: Sweep Register
+  int readNR10() => nr10 | 0x80; // Bit 7 is always read as 1
   void writeNR10(int value) {
-    nrx0 = value;
-
-    sweepPeriod = (value >> 4) & 0x7; // Sweep time in steps
-    sweepDirection = (value & 0x08) != 0; // 1 = decrease, 0 = increase
-    sweepShift = value & 0x07; // Frequency shift
-
-    // If sweep time is 0, treat it as 8 according to hardware
-    if (sweepPeriod == 0) sweepPeriod = 8;
-
-    // Enable sweep if the shift is non-zero
-    sweepEnabled = (sweepShift > 0);
-
-    print("Sweep enabled: $sweepEnabled, sweepShift: $sweepShift");
+    nr10 = value;
+    sweepPeriod = (nr10 >> 4) & 0x07;
+    sweepNegate = (nr10 & 0x08) != 0;
+    sweepShift = nr10 & 0x07;
+    sweepEnabled = sweepPeriod != 0 || sweepShift != 0;
   }
 
-  // NR11: Sound Length/Wave Duty (NR11)
-  int readNR11() => nrx1 | 0x3F;
+  // NR11: Sound Length / Waveform Duty
+  int readNR11() => nr11 | 0x3F; // Bits 0-5 are unused/read-only
   void writeNR11(int value) {
-    nrx1 = value;
-    lengthCounter = 64 - (value & 0x3F); // 64-step length counter
-
-    // Duty cycle: 00, 01, 10, 11 map to 12.5%, 25%, 50%, 75%
-    dutyCycleIndex = (value >> 6) & 0x03;
+    nr11 = value;
+    dutyCycle = (nr11 >> 6) & 0x03;
+    int lengthData = nr11 & 0x3F;
+    lengthCounter = 64 - lengthData;
   }
 
-  // NR12: Volume Envelope (NR12)
-  int readNR12() => nrx2;
+  // NR12: Volume Envelope
+  int readNR12() => nr12;
   void writeNR12(int value) {
-    nrx2 = value;
-
-    // Volume and envelope settings
-    volume = (value >> 4) & 0x0F; // Initial volume
-    envelopeDirection = (value & 0x08) != 0; // Envelope direction
-    envelopePeriod = value & 0x07; // Envelope sweep period
-
-    // Treat envelope sweep of 0 as 8, as per hardware behavior
-    if (envelopePeriod == 0) envelopePeriod = 8;
+    nr12 = value;
+    volume = (nr12 >> 4) & 0x0F;
+    envelopeIncrease = (nr12 & 0x08) != 0;
+    envelopePeriod = nr12 & 0x07;
+    dacEnabled = (nr12 & 0xF8) != 0;
+    if (!dacEnabled) {
+      enabled = false;
+    }
   }
 
-  // NR13: Frequency low (NR13)
-  int readNR13() => nrx3 | 0xFF;
+  // NR13: Frequency Low
+  int readNR13() => 0xFF; // Write-only register
   void writeNR13(int value) {
-    nrx3 = value;
-
-    // Lower 8 bits of frequency
-    frequency = (nrx4 & 0x07) << 8 | value;
-
-    // Recalculate cycle length based on frequency
-    if (frequency != 0) {
-      cycleLength = (2048 - frequency) * 4;
-    } else {
-      cycleLength =
-          2048 * 4; // Set a default cycle length to avoid too-small values
-    }
+    nr13 = value;
+    frequency = (nr14 & 0x07) << 8 | nr13;
+    updateFrequencyTimer();
   }
 
-  // NR14: Frequency high + Control (NR14)
-  int readNR14() => nrx4 | 0xBF;
+  // NR14: Frequency High and Control
+  int readNR14() => nr14 | 0xBF; // Bits 6-7 are unused/read-only
   void writeNR14(int value) {
-    nrx4 = value;
-
-    // Higher 3 bits of frequency
-    frequency = (nrx4 & 0x07) << 8 | nrx3;
-
-    if ((value & 0x80) != 0) {
-      // Trigger the channel
-      enabled = true;
-      waveformPhase = 0;
-
-      // Re-enable the sweep if the shift and period are valid
-      if (sweepShift > 0) {
-        sweepEnabled = true;
-        print("Sweep enabled on channel trigger.");
-      }
-
-      // Reload the sweep timer
-      sweepTimer = (sweepPeriod != 0 && sweepEnabled) ? sweepPeriod : 8;
+    bool wasLengthEnabled = lengthEnabled;
+    nr14 = value;
+    lengthEnabled = (nr14 & 0x40) != 0;
+    frequency = (nr14 & 0x07) << 8 | nr13;
+    updateFrequencyTimer();
+    if ((nr14 & 0x80) != 0) {
+      trigger();
+    }
+    if (!wasLengthEnabled &&
+        lengthEnabled &&
+        lengthCounter == 0 &&
+        frameSequencer == 0) {
+      lengthCounter = 63;
     }
   }
 
-  // Trigger the channel (reset length counter, envelope, and sweep)
+  // Trigger the channel (on write to NR14 with bit 7 set)
   void trigger() {
-    enabled = true;
-    waveformPhase = 0;
-    lengthCounter =
-        lengthCounter == 0 ? 64 : lengthCounter; // Reload length if zero
-    envelopeTimer = envelopeTimer == 0 ? 8 : envelopeTimer; // Reload envelope
-
-    // Reload sweep timer
-    if (sweepPeriod != 0 && sweepEnabled) {
-      sweepTimer = sweepPeriod;
-    } else {
-      sweepTimer = 8;
+    enabled = dacEnabled;
+    frequencyTimer = (2048 - frequency) * 4;
+    waveformIndex = 0;
+    envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
+    volume = (nr12 >> 4) & 0x0F;
+    lengthCounter = lengthCounter == 0 ? 64 : lengthCounter;
+    shadowFrequency = frequency;
+    sweepTimer = sweepPeriod == 0 ? 8 : sweepPeriod;
+    sweepEnabled = sweepPeriod != 0 || sweepShift != 0;
+    if (sweepShift != 0) {
+      calculateSweepFrequency();
     }
-    initialFrequency = frequency;
   }
 
-  // Length counter logic
+  // Update the frequency timer based on the current frequency
+  void updateFrequencyTimer() {
+    frequencyTimer = (2048 - frequency) * 4;
+  }
+
+  // Update method called every CPU cycle
+  void tick(int cycles) {
+    if (!enabled) return;
+
+    // Frequency timer
+    frequencyTimer -= cycles;
+    while (frequencyTimer <= 0) {
+      frequencyTimer += (2048 - frequency) * 4;
+      waveformIndex = (waveformIndex + 1) % 8;
+    }
+  }
+
+  // Update length counter (called by frame sequencer)
   void updateLengthCounter() {
     if (lengthEnabled && lengthCounter > 0) {
       lengthCounter--;
       if (lengthCounter == 0) {
-        enabled = false; // Disable the channel when the counter reaches zero
+        enabled = false;
       }
     }
   }
 
-  // Sweep logic (adjust frequency over time)
-  void updateSweep() {
-    if (sweepEnabled && sweepPeriod > 0 && sweepShift > 0) {
-      // Add check for valid period and shift
-      sweepTimer--;
-      if (sweepTimer == 0) {
-        sweepTimer = sweepPeriod;
-
-        int newFrequency = calculateSweep();
-        if (newFrequency > 2047) {
-          enabled = false; // Disable if frequency exceeds maximum
-          sweepEnabled = false; // Disable sweep if frequency exceeds limit
-          print("Channel1 disabled due to frequency > 0x7FF.");
-        } else {
-          frequency = newFrequency;
-          cycleLength = (2048 - frequency) * 4;
-          print("Channel1 frequency updated: $frequency");
-        }
-      }
-    }
-  }
-
-  // Calculate the next frequency based on the sweep shift and direction
-  int calculateSweep() {
-    int shiftedFrequency = frequency >> sweepShift;
-    int result = sweepDirection
-        ? frequency - shiftedFrequency
-        : frequency + shiftedFrequency;
-
-    print(
-        "Sweep calculation: frequency = $frequency, shifted = $shiftedFrequency, result = $result");
-    return result;
-  }
-
-  // Volume envelope logic
+  // Update envelope (called by frame sequencer)
   void updateEnvelope() {
-    if (envelopeTimer > 0) {
+    if (envelopePeriod > 0) {
       envelopeTimer--;
-      if (envelopeTimer == 0) {
-        envelopeTimer = nrx2 & 0x07; // Reload the timer
-        if (envelopeTimer == 0) {
-          envelopeTimer = 8; // Period of 0 is treated as 8
-        }
-        if (envelopeDirection) {
-          if (volume < 15) {
-            volume++; // Increase volume
-          }
-        } else {
-          if (volume > 0) {
-            volume--; // Decrease volume
-          }
+      if (envelopeTimer <= 0) {
+        envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
+        if (envelopeIncrease && volume < 15) {
+          volume++;
+        } else if (!envelopeIncrease && volume > 0) {
+          volume--;
         }
       }
     }
   }
 
-  // Generate the square wave output based on the duty cycle and current phase
-  // Generate the square wave output based on the duty cycle and current phase
+  // Update sweep (called by frame sequencer)
+  void updateSweep() {
+    if (sweepEnabled && sweepPeriod > 0) {
+      sweepTimer--;
+      if (sweepTimer <= 0) {
+        sweepTimer = sweepPeriod == 0 ? 8 : sweepPeriod;
+        int newFrequency = calculateSweepFrequency();
+        if (newFrequency <= 2047 && sweepShift != 0) {
+          frequency = newFrequency;
+          shadowFrequency = newFrequency;
+          updateFrequencyTimer();
+          calculateSweepFrequency(); // Second calculation for overflow check
+        } else {
+          enabled = false;
+        }
+      }
+    }
+  }
+
+  // Calculate the new frequency for the sweep
+  int calculateSweepFrequency() {
+    int delta = shadowFrequency >> sweepShift;
+    int newFrequency =
+        sweepNegate ? shadowFrequency - delta : shadowFrequency + delta;
+    if (newFrequency > 2047) {
+      enabled = false;
+    }
+    return newFrequency & 0x7FF; // Ensure 11-bit frequency
+  }
+
+  // Get the output sample for the current state
   int getOutput() {
-    if (!enabled || volume == 0) return 0;
-
-    // Debugging output to see the values
-    // print("Waveform Phase: $waveformPhase, Cycle Length: $cycleLength");
-
-    // Ensure cycleLength is not too small to avoid division by zero
-    if (cycleLength < 8) {
-      print(
-          "Error: cycleLength is too small ($cycleLength), returning 0 output.");
-      return 0; // Prevent division by zero with very small cycle length
-    }
-
-    // Use the dutyCycleIndex set in writeNR11 to determine the duty cycle pattern
-    int dutyPattern = [0x01, 0x81, 0xC7, 0x7E][dutyCycleIndex]; // Duty patterns
-
-    // Determine if we're in the high phase of the waveform based on the duty cycle
-    bool isHighPhase =
-        (dutyPattern & (1 << (waveformPhase ~/ (cycleLength ~/ 8)))) != 0;
-
-    // Return volume scaled by whether it's in the high or low phase
-    return isHighPhase
-        ? volume * 2
-        : -volume * 2; // Double the volume scaling for better output
+    if (!enabled || !dacEnabled) return 0;
+    int dutyValue = dutyPatterns[dutyCycle][waveformIndex];
+    int sample = dutyValue == 0 ? -volume : volume;
+    return sample;
   }
 
-  // Tick the channel (advance the waveform and handle timing)
-  void tick(int delta) {
-    if (!enabled) return;
-
-    // Update the waveform phase based on CPU cycles
-    waveformPhase += delta;
-    if (waveformPhase >= cycleLength) {
-      waveformPhase = 0; // Reset phase at the end of the waveform cycle
-    }
-  }
-
-  // Reset the channel state
+  // Reset the channel
   void reset() {
-    nrx0 = 0;
-    nrx1 = 0;
-    nrx2 = 0;
-    nrx3 = 0;
-    nrx4 = 0;
-    enabled = false;
-    sweepEnabled = false;
-    sweepDirection = false;
-    envelopeDirection = false;
-    lengthEnabled = false;
-    volume = 0;
+    nr10 = 0;
+    nr11 = 0;
+    nr12 = 0;
+    nr13 = 0;
+    nr14 = 0;
+    frequency = 0;
+    frequencyTimer = 0;
+    waveformIndex = 0;
+    sweepTimer = 0;
+    envelopeTimer = 0;
     lengthCounter = 0;
-    cycleLength = 0;
-    waveformPhase = 0;
-    sweepShift = 0;
+    volume = 0;
+    enabled = false;
+    dacEnabled = false;
+    sweepEnabled = false;
+    lengthEnabled = false;
+    envelopeIncrease = false;
+    sweepNegate = false;
     sweepPeriod = 0;
-    initialFrequency = 0;
+    sweepShift = 0;
+    shadowFrequency = 0;
+    envelopePeriod = 0;
+  }
+
+  // Frame sequencer reference (needs to be set from Audio class)
+  int frameSequencer = 0;
+
+  // Set frame sequencer value (called from Audio class)
+  void setFrameSequencer(int value) {
+    frameSequencer = value;
   }
 }

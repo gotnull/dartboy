@@ -17,5 +17,5 @@ class Configuration {
   static bool debugInstructions = false;
 
   /// Debug varible to enable audio.
-  static bool enableAudio = false;
+  static bool enableAudio = true;
 }

@@ -1,161 +1,173 @@
 class Channel2 {
-  int nrx1 = 0; // Sound Length/Wave Duty (NR21)
-  int nrx2 = 0; // Volume Envelope (NR22)
-  int nrx3 = 0; // Frequency low (NR23)
-  int nrx4 = 0; // Frequency high + Control (NR24)
+  // Registers
+  int nr21 = 0; // Sound Length/Wave Duty (NR21)
+  int nr22 = 0; // Volume Envelope (NR22)
+  int nr23 = 0; // Frequency low (NR23)
+  int nr24 = 0; // Frequency high + Control (NR24)
 
-  int frequency = 0; // Current frequency
-  int waveformPhase = 0; // Track the current phase of the waveform
-  int cycleLength = 0; // Frequency timer period
+  // Internal variables
+  int frequency = 0; // Current frequency (11 bits)
+  int frequencyTimer = 0; // Frequency timer
+  int waveformIndex = 0; // Current position in waveform (0-7)
   int envelopeTimer = 0; // Timer for the volume envelope
-
-  bool enabled = false; // Whether the channel is currently enabled
-  bool envelopeDirection = false; // Whether the envelope increases or decreases
-  bool lengthEnabled = false; // Length counter enabled flag
-
   int lengthCounter = 0; // Length counter
-  int volume = 0; // Current volume
-  int sampleBuffer = 0; // Holds the current waveform sample
-  int envelopeSweep = 0;
+  int volume = 0; // Current volume (0-15)
 
-  int dutyCycleIndex = 0; // Index for duty cycle
-  List<int> dutyCycles = [0x01, 0x81, 0xC7, 0x7E];
+  // Envelope variables
+  bool envelopeIncrease = false; // Envelope direction (true for increase)
+  int envelopePeriod = 0;
 
-  // NR21: Sound Length/Wave Duty (NR21)
-  int readNR21() => nrx1 | 0x3F;
+  // Length counter enabled flag
+  bool lengthEnabled = false;
+
+  // Channel enabled flag
+  bool enabled = false;
+
+  // Duty cycle variables
+  int dutyCycle = 0; // Duty cycle index (0-3)
+  static const List<List<int>> dutyPatterns = [
+    [0, 1, 0, 0, 0, 0, 0, 0], // 12.5%
+    [0, 1, 1, 0, 0, 0, 0, 0], // 25%
+    [0, 1, 1, 1, 1, 0, 0, 0], // 50%
+    [1, 0, 0, 0, 0, 1, 1, 1], // 75%
+  ];
+
+  // DAC enabled flag (determined by NR22)
+  bool dacEnabled = false;
+
+  // Constructor
+  Channel2();
+
+  // NR21: Sound Length / Waveform Duty
+  int readNR21() => nr21 | 0x3F; // Bits 0-5 are unused/read-only
   void writeNR21(int value) {
-    nrx1 = value;
-
-    // Set length counter
-    lengthCounter =
-        64 - (value & 0x3F); // Extract lower 6 bits for sound length
-
-    // Duty cycle: 00, 01, 10, 11 map to 12.5%, 25%, 50%, 75%
-    dutyCycleIndex = (value >> 6) & 0x03;
+    nr21 = value;
+    dutyCycle = (nr21 >> 6) & 0x03;
+    int lengthData = nr21 & 0x3F;
+    lengthCounter = 64 - lengthData;
   }
 
-  // NR22: Volume Envelope (NR22)
-  int readNR22() => nrx2;
+  // NR22: Volume Envelope
+  int readNR22() => nr22;
   void writeNR22(int value) {
-    nrx2 = value;
-
-    // Volume and envelope settings
-    volume = (value >> 4) & 0x0F; // Initial volume
-    envelopeDirection = (value & 0x08) != 0; // Envelope direction
-    envelopeSweep = value & 0x07; // Envelope sweep period
-
-    if (envelopeSweep == 0) envelopeSweep = 8; // Treat 0 sweep period as 8
-  }
-
-  // NR23: Frequency low (NR23)
-  int readNR23() => nrx3 | 0xFF;
-  void writeNR23(int value) {
-    nrx3 = value;
-
-    // Lower 8 bits of frequency
-    frequency = (nrx4 & 0x07) << 8 | value;
-  }
-
-  // NR24: Frequency high + Control (NR24)
-  int readNR24() => nrx4 | 0xBF;
-  void writeNR24(int value) {
-    nrx4 = value;
-
-    // Higher 3 bits of frequency
-    frequency = (nrx4 & 0x07) << 8 | nrx3;
-
-    if ((value & 0x80) != 0) {
-      // Trigger the channel
-      enabled = true;
-      waveformPhase = 0;
-
-      // Reload envelope
-      envelopeTimer = envelopeSweep;
-      volume = (nrx2 >> 4) & 0xF;
-
-      // Set cycle length
-      cycleLength = (2048 - frequency) * 4;
+    nr22 = value;
+    volume = (nr22 >> 4) & 0x0F;
+    envelopeIncrease = (nr22 & 0x08) != 0;
+    envelopePeriod = nr22 & 0x07;
+    dacEnabled = (nr22 & 0xF8) != 0;
+    if (!dacEnabled) {
+      enabled = false;
     }
   }
 
-  // Length counter logic
+  // NR23: Frequency Low
+  int readNR23() => 0xFF; // Write-only register
+  void writeNR23(int value) {
+    nr23 = value;
+    frequency = (nr24 & 0x07) << 8 | nr23;
+    updateFrequencyTimer();
+  }
+
+  // NR24: Frequency High and Control
+  int readNR24() => nr24 | 0xBF; // Bits 6-7 are unused/read-only
+  void writeNR24(int value) {
+    bool wasLengthEnabled = lengthEnabled;
+    nr24 = value;
+    lengthEnabled = (nr24 & 0x40) != 0;
+    frequency = (nr24 & 0x07) << 8 | nr23;
+    updateFrequencyTimer();
+    if ((nr24 & 0x80) != 0) {
+      trigger();
+    }
+    if (!wasLengthEnabled && lengthEnabled && lengthCounter == 0 && frameSequencer == 0) {
+      lengthCounter = 63;
+    }
+  }
+
+  // Trigger the channel (on write to NR24 with bit 7 set)
+  void trigger() {
+    enabled = dacEnabled;
+    frequencyTimer = (2048 - frequency) * 4;
+    waveformIndex = 0;
+    envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
+    volume = (nr22 >> 4) & 0x0F;
+    lengthCounter = lengthCounter == 0 ? 64 : lengthCounter;
+  }
+
+  // Update the frequency timer based on the current frequency
+  void updateFrequencyTimer() {
+    frequencyTimer = (2048 - frequency) * 4;
+  }
+
+  // Update method called every CPU cycle
+  void tick(int cycles) {
+    if (!enabled) return;
+
+    // Frequency timer
+    frequencyTimer -= cycles;
+    while (frequencyTimer <= 0) {
+      frequencyTimer += (2048 - frequency) * 4;
+      waveformIndex = (waveformIndex + 1) % 8;
+    }
+  }
+
+  // Update length counter (called by frame sequencer)
   void updateLengthCounter() {
     if (lengthEnabled && lengthCounter > 0) {
       lengthCounter--;
       if (lengthCounter == 0) {
-        enabled = false; // Disable the channel when the counter reaches zero
+        enabled = false;
       }
     }
   }
 
-  // Volume envelope logic
+  // Update envelope (called by frame sequencer)
   void updateEnvelope() {
-    if (envelopeTimer > 0) {
+    if (envelopePeriod > 0) {
       envelopeTimer--;
-      if (envelopeTimer == 0) {
-        envelopeTimer = envelopeSweep; // Reload the timer with envelopeSweep
-        if (envelopeTimer == 0) {
-          envelopeTimer = 8; // Period of 0 is treated as 8
-        }
-
-        if (envelopeDirection) {
-          if (volume < 15) {
-            volume++; // Increase volume
-          }
-        } else {
-          if (volume > 0) {
-            volume--; // Decrease volume
-          }
+      if (envelopeTimer <= 0) {
+        envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
+        if (envelopeIncrease && volume < 15) {
+          volume++;
+        } else if (!envelopeIncrease && volume > 0) {
+          volume--;
         }
       }
     }
   }
 
-  // Generate the square wave output based on the duty cycle and current phase
+  // Get the output sample for the current state
   int getOutput() {
-    if (!enabled || volume == 0) return 0;
-
-    // Ensure cycleLength is not too small to avoid division by zero
-    if (cycleLength < 8) {
-      print(
-          "Error: cycleLength is too small ($cycleLength), returning 0 output.");
-      return 0;
-    }
-
-    // Duty cycle determines the high/low pattern of the square wave
-    int dutyPattern = [0x01, 0x81, 0xC7, 0x7E][dutyCycleIndex];
-
-    // Determine if we're in the high phase of the waveform
-    bool isHighPhase =
-        (dutyPattern & (1 << (waveformPhase ~/ (cycleLength ~/ 8)))) != 0;
-
-    // Return volume scaled by whether it's in the high or low phase
-    return isHighPhase ? volume * 2 : -volume * 2;
+    if (!enabled || !dacEnabled) return 0;
+    int dutyValue = dutyPatterns[dutyCycle][waveformIndex];
+    int sample = dutyValue == 0 ? -volume : volume;
+    return sample;
   }
 
-  // Tick the channel (advance the waveform and handle timing)
-  void tick(int delta) {
-    if (!enabled) return;
-
-    // Update the waveform phase based on CPU cycles
-    waveformPhase += delta;
-    if (waveformPhase >= cycleLength) {
-      waveformPhase = 0; // Reset phase at the end of the waveform cycle
-    }
-  }
-
-  // Reset the channel state
+  // Reset the channel
   void reset() {
-    nrx1 = 0;
-    nrx2 = 0;
-    nrx3 = 0;
-    nrx4 = 0;
-    enabled = false;
-    envelopeDirection = false;
-    lengthEnabled = false;
-    volume = 0;
+    nr21 = 0;
+    nr22 = 0;
+    nr23 = 0;
+    nr24 = 0;
+    frequency = 0;
+    frequencyTimer = 0;
+    waveformIndex = 0;
+    envelopeTimer = 0;
     lengthCounter = 0;
-    cycleLength = 0;
-    waveformPhase = 0;
+    volume = 0;
+    enabled = false;
+    dacEnabled = false;
+    lengthEnabled = false;
+    envelopeIncrease = false;
+    envelopePeriod = 0;
+  }
+
+  // Frame sequencer reference (needs to be set from Audio class)
+  int frameSequencer = 0;
+
+  // Set frame sequencer value (called from Audio class)
+  void setFrameSequencer(int value) {
+    frameSequencer = value;
   }
 }
