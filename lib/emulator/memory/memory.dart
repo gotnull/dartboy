@@ -355,6 +355,7 @@ class Memory {
 
       for (int i = 0x00; i < 0xA0; i++) {
         writeByte(0xFE00 + i, readByte(addressBase + i));
+        cpu.tick(4); // Ensure each byte transfer takes 4 cycles
       }
     }
     // Divider register

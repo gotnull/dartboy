@@ -208,7 +208,7 @@ class Emulator {
         // Execute CPU steps for one frame
         while (cyclesThisFrame < frameCycles) {
           int stepCycles = cpu?.cycle() ?? 4;
-          cyclesThisFrame += 4; // cpu?.insCycles ?? 0;
+          cyclesThisFrame += stepCycles;
         }
 
         cycles += cyclesThisFrame; // Update total cycles

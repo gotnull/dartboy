@@ -175,10 +175,9 @@ class CPU {
 
   /// Push word into the temporary stack and update the stack pointer
   void pushWordSP(int value) {
-    sp = (sp - 1) & 0xFFFF;
-    mmu.writeByte(sp, (value >> 8) & 0xFF); // High byte
-    sp = (sp - 1) & 0xFFFF;
-    mmu.writeByte(sp, value & 0xFF); // Low byte
+    sp -= 2;
+    mmu.writeByte(sp, value & 0xFF);
+    mmu.writeByte(sp + 1, (value >> 8) & 0xFF);
   }
 
   int popWordSP() {
@@ -237,14 +236,17 @@ class CPU {
         case 0x0:
           timerPeriod = getActualClockSpeed() ~/ 4096;
           break;
+
         // 262144 Hz
         case 0x1:
           timerPeriod = getActualClockSpeed() ~/ 262144;
           break;
+
         // 65536 Hz
         case 0x2:
           timerPeriod = getActualClockSpeed() ~/ 65536;
           break;
+
         // 16384 Hz
         case 0x3:
           timerPeriod = getActualClockSpeed() ~/ 16384;
@@ -344,10 +346,17 @@ class CPU {
 
     if (halted) {
       if ((ie & ifr) != 0) {
+        // Exit halt if any interrupt is enabled and triggered
         halted = false;
       } else {
-        tick(4);
-        return 0;
+        // The halt bug: if IME is disabled and no interrupts are enabled but a halt was executed,
+        // the CPU should still execute the next instruction
+        if (!interruptsEnabled && ie == 0 && ifr == 0) {
+          halted = false; // Clear halted for halt bug emulation
+        } else {
+          tick(4); // Maintain halt if no halt bug condition
+          return 0;
+        }
       }
     }
 
@@ -389,9 +398,8 @@ class CPU {
   }
 
   int executeInstruction(int op) {
-    int actualCycles = checkCycleCount(op);
-
-    // print("CPU instruction 0x${op.toRadixString(16)}");
+    // Get the correct cycle count for the opcode
+    int cyclesForOp = checkCycleCount(op);
 
     switch (op) {
       case 0x00:
@@ -402,7 +410,8 @@ class CPU {
       case 0xD4:
       case 0xDC:
         bool conditionMet = Instructions.callccnn(this, op);
-        return checkCycleCount(op, conditionMet);
+        cyclesForOp = checkCycleCount(op, conditionMet);
+        break;
       case 0xCD:
         Instructions.callnn(this);
         break;
@@ -479,51 +488,51 @@ class CPU {
       case 0x10:
         Instructions.stop(this);
         break;
-      case 0xf9:
+      case 0xF9:
         Instructions.ldsphl(this);
         break;
-      case 0xc5: // BC
-      case 0xd5: // DE
-      case 0xe5: // HL
-      case 0xf5: // AF
+      case 0xC5:
+      case 0xD5:
+      case 0xE5:
+      case 0xF5:
         Instructions.pushrr(this, op);
         break;
-      case 0xc1: // BC
-      case 0xd1: // DE
-      case 0xe1: // HL
-      case 0xf1: // AF
+      case 0xC1:
+      case 0xD1:
+      case 0xE1:
+      case 0xF1:
         Instructions.poprr(this, op);
         break;
       case 0x08:
         Instructions.lda16sp(this);
         break;
-      case 0xd9:
+      case 0xD9:
         Instructions.reti(this);
         break;
-      case 0xc3:
+      case 0xC3:
         Instructions.jpnn(this);
         break;
       case 0x07:
         Instructions.rlca(this);
         break;
-      case 0x3c: // A
-      case 0x04: // B
-      case 0x0c: // C
-      case 0x14: // D
-      case 0x1c: // E
-      case 0x24: // F
-      case 0x34: // (HL)
-      case 0x2c: // G
+      case 0x3C:
+      case 0x04:
+      case 0x0C:
+      case 0x14:
+      case 0x1C:
+      case 0x24:
+      case 0x34:
+      case 0x2C:
         Instructions.incr(this, op);
         break;
-      case 0x3d: // A
-      case 0x05: // B
-      case 0x0d: // C
-      case 0x15: // D
-      case 0x1d: // E
-      case 0x25: // H
-      case 0x2d: // L
-      case 0x35: // (HL)
+      case 0x3D:
+      case 0x05:
+      case 0x0D:
+      case 0x15:
+      case 0x1D:
+      case 0x25:
+      case 0x2D:
+      case 0x35:
         Instructions.decr(this, op);
         break;
       case 0x03:
@@ -532,17 +541,17 @@ class CPU {
       case 0x33:
         Instructions.incrr(this, op);
         break;
-      case 0xb8:
-      case 0xb9:
-      case 0xba:
-      case 0xbb:
-      case 0xbc:
-      case 0xbd:
-      case 0xbe:
-      case 0xbf:
+      case 0xB8:
+      case 0xB9:
+      case 0xBA:
+      case 0xBB:
+      case 0xBC:
+      case 0xBD:
+      case 0xBE:
+      case 0xBF:
         Instructions.cprr(this, op);
         break;
-      case 0xfe:
+      case 0xFE:
         Instructions.cpn(this);
         break;
       case 0x09:
@@ -551,13 +560,13 @@ class CPU {
       case 0x39:
         Instructions.addhlrr(this, op);
         break;
-      case 0xe9:
+      case 0xE9:
         Instructions.jphl(this);
         break;
-      case 0xde:
+      case 0xDE:
         Instructions.sbcn(this);
         break;
-      case 0xd6:
+      case 0xD6:
         Instructions.subn(this);
         break;
       case 0x90:
@@ -566,11 +575,11 @@ class CPU {
       case 0x93:
       case 0x94:
       case 0x95:
-      case 0x96: // (HL)
+      case 0x96:
       case 0x97:
         Instructions.subr(this, op);
         break;
-      case 0xc6:
+      case 0xC6:
         Instructions.addn(this);
         break;
       case 0x87:
@@ -580,50 +589,50 @@ class CPU {
       case 0x83:
       case 0x84:
       case 0x85:
-      case 0x86: // (HL)
+      case 0x86:
         Instructions.addr(this, op);
         break;
       case 0x88:
       case 0x89:
-      case 0x8a:
-      case 0x8b:
-      case 0x8c:
-      case 0x8e:
-      case 0x8d:
-      case 0x8f:
+      case 0x8A:
+      case 0x8B:
+      case 0x8C:
+      case 0x8E:
+      case 0x8D:
+      case 0x8F:
         Instructions.adcr(this, op);
         break;
-      case 0xa0:
-      case 0xa1:
-      case 0xa2:
-      case 0xa3:
-      case 0xa4:
-      case 0xa5:
-      case 0xa6: // (HL)
-      case 0xa7:
+      case 0xA0:
+      case 0xA1:
+      case 0xA2:
+      case 0xA3:
+      case 0xA4:
+      case 0xA5:
+      case 0xA6:
+      case 0xA7:
         Instructions.andr(this, op);
         break;
-      case 0xa8:
-      case 0xa9:
-      case 0xaa:
-      case 0xab:
-      case 0xac:
-      case 0xad:
-      case 0xae:
-      case 0xaf:
+      case 0xA8:
+      case 0xA9:
+      case 0xAA:
+      case 0xAB:
+      case 0xAC:
+      case 0xAD:
+      case 0xAE:
+      case 0xAF:
         Instructions.xorr(this, op);
         break;
-      case 0xf6:
+      case 0xF6:
         Instructions.orn(this);
         break;
-      case 0xb0:
-      case 0xb1:
-      case 0xb2:
-      case 0xb3:
-      case 0xb4:
-      case 0xb5:
-      case 0xb6: // (HL)
-      case 0xb7:
+      case 0xB0:
+      case 0xB1:
+      case 0xB2:
+      case 0xB3:
+      case 0xB4:
+      case 0xB5:
+      case 0xB6:
+      case 0xB7:
         Instructions.orr(this, op);
         break;
       case 0x18:
@@ -632,44 +641,47 @@ class CPU {
       case 0x27:
         Instructions.daa(this);
         break;
-      case 0xca:
-      case 0xc2: // NZ
-      case 0xd2:
-      case 0xda:
+      case 0xCA:
+      case 0xC2:
+      case 0xDA:
+      case 0xD2:
         bool conditionMet = Instructions.jpcnn(this, op);
-        return checkCycleCount(op, conditionMet);
-      case 0x20: // NZ
+        cyclesForOp = checkCycleCount(op, conditionMet);
+        break;
+      case 0x20:
       case 0x28:
       case 0x30:
       case 0x38:
         bool conditionMet = Instructions.jrce(this, op);
-        return checkCycleCount(op, conditionMet);
-      case 0xf0:
+        cyclesForOp = checkCycleCount(op, conditionMet);
+        break;
+      case 0xF0:
         Instructions.ldhffnn(this);
         break;
       case 0x76:
         Instructions.halt(this);
         break;
-      case 0xc0: // NZ non zero (Z)
-      case 0xc8: // Z zero (Z)
-      case 0xd0: // NC non carry (C)
-      case 0xd8: // Carry (C)
+      case 0xC0:
+      case 0xC8:
+      case 0xD0:
+      case 0xD8:
         bool conditionMet = Instructions.retc(this, op);
-        return checkCycleCount(op, conditionMet);
-      case 0xc7:
-      case 0xcf:
-      case 0xd7:
-      case 0xdf:
-      case 0xe7:
-      case 0xef:
-      case 0xf7:
+        cyclesForOp = checkCycleCount(op, conditionMet);
+        break;
+      case 0xC7:
+      case 0xCF:
+      case 0xD7:
+      case 0xDF:
+      case 0xE7:
+      case 0xEF:
+      case 0xF7:
       case 0xFF:
         Instructions.rstp(this, op);
         break;
-      case 0xf3:
+      case 0xF3:
         Instructions.di(this);
         break;
-      case 0xfb:
+      case 0xFB:
         Instructions.ei(this);
         break;
       case 0xE6:
@@ -678,35 +690,35 @@ class CPU {
       case 0xEE:
         Instructions.xorn(this);
         break;
-      case 0xc9:
+      case 0xC9:
         Instructions.ret(this);
         break;
-      case 0xce:
+      case 0xCE:
         Instructions.adcn(this);
         break;
       case 0x98:
       case 0x99:
-      case 0x9a:
-      case 0x9b:
-      case 0x9c:
-      case 0x9d:
-      case 0x9e: // (HL)
-      case 0x9f:
+      case 0x9A:
+      case 0x9B:
+      case 0x9C:
+      case 0x9D:
+      case 0x9E:
+      case 0x9F:
         Instructions.sbcr(this, op);
         break;
-      case 0x0F: // RRCA
+      case 0x0F:
         Instructions.rrca(this);
         break;
-      case 0x1f: // RRA
+      case 0x1F:
         Instructions.rra(this);
         break;
-      case 0x17: // RLA
+      case 0x17:
         Instructions.rla(this);
         break;
-      case 0x0b:
-      case 0x1b:
-      case 0x2b:
-      case 0x3b:
+      case 0x0B:
+      case 0x1B:
+      case 0x2B:
+      case 0x3B:
         Instructions.decrr(this, op);
         break;
       case 0xCB:
@@ -718,21 +730,23 @@ class CPU {
             Instructions.ldrr(this, op);
             break;
           default:
-            print(
-              'Unsupported operation, (OP: 0x${op.toRadixString(16)})',
-            );
+            print('Unsupported operation, (OP: 0x${op.toRadixString(16)})');
             break;
         }
-        break; // End of the outer switch default case
+        break;
     }
-    // Check if interrupts should be enabled in the next cycle
+
+    // Enable interrupts if needed after each instruction
     if (enableInterruptsNextCycle) {
       interruptsEnabled = true;
       enableInterruptsNextCycle = false;
     }
-    tick(actualCycles);
 
-    return actualCycles;
+    // Advance the CPU clock by the cycles required for the executed instruction.
+    tick(cyclesForOp);
+
+    // Return the cycles used for this instruction.
+    return cyclesForOp;
   }
 
   /// Puts the emulator in and out of double speed mode.
