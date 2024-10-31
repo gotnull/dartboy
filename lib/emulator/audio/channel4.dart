@@ -168,6 +168,11 @@ class Channel4 {
         } else if (!envelopeIncrease && volume > 0) {
           volume--;
         }
+
+        // Disable envelope if volume reaches boundary
+        if (volume == 0 || volume == 15) {
+          envelopeTimer = 0;
+        }
       }
     }
   }

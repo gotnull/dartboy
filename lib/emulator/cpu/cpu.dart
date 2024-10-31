@@ -55,6 +55,10 @@ class CPU {
   /// Indicates if the emulator is running at double speed.
   bool doubleSpeed;
 
+  int cycles = 0;
+
+  int insCycles = 0;
+
   /// The current cycle of the DIV register.
   int divCycle = 0;
 
@@ -158,8 +162,8 @@ class CPU {
   }
 
   int popByteSP() {
-    int value = mmu.readByte(sp); // Read byte from the stack pointer (SP)
-    sp = (sp + 1) & 0xFFFF; // Increment SP and wrap around at 16 bits
+    int value = mmu.readByte(sp);
+    sp = (sp + 1) & 0xFFFF; // SP increments after reading a byte
     return value;
   }
 
@@ -171,9 +175,18 @@ class CPU {
 
   /// Push word into the temporary stack and update the stack pointer
   void pushWordSP(int value) {
-    sp -= 2;
-    mmu.writeByte(sp, value & 0xFF);
-    mmu.writeByte(sp + 1, (value >> 8) & 0xFF);
+    sp = (sp - 1) & 0xFFFF;
+    mmu.writeByte(sp, (value >> 8) & 0xFF); // High byte
+    sp = (sp - 1) & 0xFFFF;
+    mmu.writeByte(sp, value & 0xFF); // Low byte
+  }
+
+  int popWordSP() {
+    int lo = mmu.readByte(sp);
+    sp = (sp + 1) & 0xFFFF;
+    int hi = mmu.readByte(sp);
+    sp = (sp + 1) & 0xFFFF;
+    return (hi << 8) | lo;
   }
 
   /// Increase the clock cycles and trigger interrupts as needed.
@@ -181,11 +194,7 @@ class CPU {
     clocks += delta;
     cyclesSinceLastSleep += delta;
     cyclesExecutedThisSecond += delta;
-
     updateInterrupts(delta);
-
-    // Also tick the audio system
-    audio.tick(delta); // Tick audio to process sound channels
   }
 
   int getActualClockSpeed() {
@@ -208,6 +217,7 @@ class CPU {
 
     if (divCycle >= 256) {
       divCycle -= 256;
+
       mmu.writeRegisterByte(
           MemoryRegisters.div, mmu.readRegisterByte(MemoryRegisters.div) + 1);
     }
@@ -257,6 +267,7 @@ class CPU {
     }
 
     ppu.tick(delta);
+    audio.tick(delta);
   }
 
   /// Triggers a particular interrupt by writing the correct interrupt bit to the interrupt register.
@@ -267,107 +278,109 @@ class CPU {
         mmu.readRegisterByte(MemoryRegisters.triggeredInterrupts) | interrupt);
   }
 
-  /// Fires interrupts if interrupts are enabled.
-  void fireInterrupts() {
-    // Auxiliary method to check if an interruption was triggered.
-    bool interruptTriggered(int interrupt) {
-      return (mmu.readRegisterByte(MemoryRegisters.triggeredInterrupts) &
-              mmu.readRegisterByte(MemoryRegisters.enabledInterrupts) &
-              interrupt) !=
-          0;
-    }
+  // Auxiliary method to check if an interruption was triggered.
+  bool interruptTriggered(int interrupt) {
+    return (mmu.readRegisterByte(MemoryRegisters.triggeredInterrupts) &
+            mmu.readRegisterByte(MemoryRegisters.enabledInterrupts) &
+            interrupt) !=
+        0;
+  }
 
+  /// Fires interrupts if interrupts are enabled.
+  bool fireInterrupts() {
     // If interrupts are disabled (via the DI instruction), ignore this call
     if (!interruptsEnabled) {
-      return;
+      return false;
     }
 
-    // Flag of which interrupts should be triggered
-    int triggeredInterrupts =
-        mmu.readRegisterByte(MemoryRegisters.triggeredInterrupts);
+    int triggeredInterrupts = mmu.readRegisterByte(
+      MemoryRegisters.triggeredInterrupts,
+    );
 
-    // Which interrupts the program is actually interested in, these are the ones we will fire
-    int enabledInterrupts =
-        mmu.readRegisterByte(MemoryRegisters.enabledInterrupts);
+    int enabledInterrupts = mmu.readRegisterByte(
+      MemoryRegisters.enabledInterrupts,
+    );
 
-    // If this is nonzero, then some interrupt that we are checking for was triggered
     if ((triggeredInterrupts & enabledInterrupts) != 0) {
       pushWordSP(pc);
-
-      // This is important
       interruptsEnabled = false;
 
-      // Interrupt priorities are vblank > lcdc > tima overflow > serial transfer > hilo
-      if (interruptTriggered(MemoryRegisters.vblankBit)) {
+      if ((triggeredInterrupts & MemoryRegisters.vblankBit) != 0) {
         pc = MemoryRegisters.vblankHandlerAddress;
         triggeredInterrupts &= ~MemoryRegisters.vblankBit;
-      } else if (interruptTriggered(MemoryRegisters.lcdcBit)) {
+      } else if ((triggeredInterrupts & MemoryRegisters.lcdcBit) != 0) {
         pc = MemoryRegisters.lcdcHandlerAddress;
         triggeredInterrupts &= ~MemoryRegisters.lcdcBit;
-      } else if (interruptTriggered(MemoryRegisters.timerOverflowBit)) {
+      } else if ((triggeredInterrupts & MemoryRegisters.timerOverflowBit) !=
+          0) {
         pc = MemoryRegisters.timerOverflowHandlerAddress;
         triggeredInterrupts &= ~MemoryRegisters.timerOverflowBit;
-      } else if (interruptTriggered(MemoryRegisters.serialTransferBit)) {
+      } else if ((triggeredInterrupts & MemoryRegisters.serialTransferBit) !=
+          0) {
         pc = MemoryRegisters.serialTransferHandlerAddress;
         triggeredInterrupts &= ~MemoryRegisters.serialTransferBit;
-      } else if (interruptTriggered(MemoryRegisters.hiloBit)) {
+      } else if ((triggeredInterrupts & MemoryRegisters.hiloBit) != 0) {
         pc = MemoryRegisters.hiloHandlerAddress;
         triggeredInterrupts &= ~MemoryRegisters.hiloBit;
       }
 
       mmu.writeRegisterByte(
-          MemoryRegisters.triggeredInterrupts, triggeredInterrupts);
+        MemoryRegisters.triggeredInterrupts,
+        triggeredInterrupts,
+      );
+
+      return true;
     }
+
+    return false;
   }
 
   /// Next step in the CPU processing, should be called at a fixed rate.
-  int step() {
-    if (halted) {
-      if (mmu.readRegisterByte(MemoryRegisters.triggeredInterrupts) == 0) {
-        clocks += 4;
-      }
+  int cycle() {
+    cycles++;
 
-      halted = false;
+    int ie = mmu.readRegisterByte(MemoryRegisters.enabledInterrupts);
+    int ifr = mmu.readRegisterByte(MemoryRegisters.triggeredInterrupts);
+
+    if (halted) {
+      if ((ie & ifr) != 0) {
+        halted = false;
+      } else {
+        tick(4);
+        return 0;
+      }
+    }
+
+    if (interruptsEnabled && fireInterrupts()) {
+      return 0;
     }
 
     int op = nextUnsignedBytePC();
-
-    // Execute the instruction and get the cycles used
     int cyclesUsed = executeInstruction(op);
-
-    if (interruptsEnabled) {
-      fireInterrupts();
-    }
 
     return cyclesUsed;
   }
 
-  int checkCycleCount(int op) {
+  int checkCycleCount(int op, [bool condition = false]) {
     int cycle = 0;
 
-    // Determine if the opcode is prefixed (CB-prefixed)
     bool isCBPrefix = op == 0xCB;
     String opcodeKey =
         '0x${(isCBPrefix ? (op & 0xFF) : op).toRadixString(16).toUpperCase().padLeft(2, '0')}';
 
-    // Safely fetch the opcode details
     Map<String, dynamic>? opcodeDetails;
 
     if (isCBPrefix) {
-      opcodeDetails = loadedOpcodes['cbprefixed'] != null
-          ? loadedOpcodes['cbprefixed']![opcodeKey]
-          : null;
+      opcodeDetails = loadedOpcodes['cbprefixed']?[opcodeKey];
     } else {
-      opcodeDetails = loadedOpcodes['unprefixed'] != null
-          ? loadedOpcodes['unprefixed']![opcodeKey]
-          : null;
+      opcodeDetails = loadedOpcodes['unprefixed']?[opcodeKey];
     }
 
-    // If we found the opcode details, extract the cycle count
     if (opcodeDetails != null) {
-      List<int> expectedCycles =
-          (opcodeDetails['cycles'] as List).map((e) => e as int).toList();
-      cycle = expectedCycles.first; // Return the first cycle count
+      List<int> expectedCycles = List<int>.from(opcodeDetails['cycles']);
+      cycle = condition && expectedCycles.length > 1
+          ? expectedCycles[1]
+          : expectedCycles[0];
     } else {
       print('Opcode $opcodeKey not found in opcodes.json');
     }
@@ -378,6 +391,8 @@ class CPU {
   int executeInstruction(int op) {
     int actualCycles = checkCycleCount(op);
 
+    // print("CPU instruction 0x${op.toRadixString(16)}");
+
     switch (op) {
       case 0x00:
         Instructions.nop(this);
@@ -386,8 +401,8 @@ class CPU {
       case 0xCC:
       case 0xD4:
       case 0xDC:
-        Instructions.callccnn(this, op);
-        break;
+        bool conditionMet = Instructions.callccnn(this, op);
+        return checkCycleCount(op, conditionMet);
       case 0xCD:
         Instructions.callnn(this);
         break;
@@ -621,14 +636,14 @@ class CPU {
       case 0xc2: // NZ
       case 0xd2:
       case 0xda:
-        Instructions.jpcnn(this, op);
-        break;
+        bool conditionMet = Instructions.jpcnn(this, op);
+        return checkCycleCount(op, conditionMet);
       case 0x20: // NZ
       case 0x28:
       case 0x30:
       case 0x38:
-        Instructions.jrce(this, op);
-        break;
+        bool conditionMet = Instructions.jrce(this, op);
+        return checkCycleCount(op, conditionMet);
       case 0xf0:
         Instructions.ldhffnn(this);
         break;
@@ -639,8 +654,8 @@ class CPU {
       case 0xc8: // Z zero (Z)
       case 0xd0: // NC non carry (C)
       case 0xd8: // Carry (C)
-        Instructions.retc(this, op);
-        break;
+        bool conditionMet = Instructions.retc(this, op);
+        return checkCycleCount(op, conditionMet);
       case 0xc7:
       case 0xcf:
       case 0xd7:
@@ -710,13 +725,11 @@ class CPU {
         }
         break; // End of the outer switch default case
     }
-
     // Check if interrupts should be enabled in the next cycle
     if (enableInterruptsNextCycle) {
       interruptsEnabled = true;
       enableInterruptsNextCycle = false;
     }
-
     tick(actualCycles);
 
     return actualCycles;

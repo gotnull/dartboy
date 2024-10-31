@@ -36,7 +36,6 @@ final TerminateAudioDart terminateAudio = audioLib
     .asFunction();
 
 class Audio {
-  static const int cpuClockSpeed = 4194304; // Game Boy CPU clock speed in Hz
   static const int frameSequencerRate = 512; // Hz
   static const int defaultSampleRate = 44100;
   static const int defaultBufferSize = 1024;
@@ -83,6 +82,8 @@ class Audio {
   }
 
   int readNR(int address) {
+    address &= 0xFFFF;
+
     switch (address) {
       case MemoryRegisters.nr10:
         return channel1.readNR10();
@@ -127,17 +128,47 @@ class Audio {
       case MemoryRegisters.nr52:
         return nr52 | 0x70; // Bits 4-6 are always read as 1 on NR52
       default:
-        print("Unknown audio register read: ${address.toRadixString(16)}");
+        print("Unknown audio register read: 0x${address.toRadixString(16)}");
         return 0xFF; // Return 0xFF for unmapped addresses
     }
   }
 
   void writeNR(int address, int value) {
-    if (address < MemoryRegisters.nr10 || address > MemoryRegisters.nr52) {
-      print(
-          "Unknown audio register write: ${address.toRadixString(16)} = $value");
+    address &= 0xFFFF;
+
+    if (address == MemoryRegisters.nr52) {
+      // Handle power on/off for APU
+      bool powerOn = (value & 0x80) != 0;
+      if (!powerOn) {
+        // Power off: reset all channels and disable APU
+        channel1.reset();
+        channel2.reset();
+        channel3.reset();
+        channel4.reset();
+        nr50 = 0;
+        nr51 = 0;
+        nr52 = 0; // Clear NR52 except the always-on bits (set below)
+        updateVolumes();
+
+        // Explicitly zero out registers to match expected reset state
+        channel1.nr10 =
+            channel1.nr11 = channel1.nr12 = channel1.nr13 = channel1.nr14 = 0;
+
+        channel2.nr21 = channel2.nr22 = channel2.nr23 = channel2.nr24 = 0;
+
+        channel3.nr30 =
+            channel3.nr31 = channel3.nr32 = channel3.nr33 = channel3.nr34 = 0;
+
+        channel4.nr41 = channel4.nr42 = channel4.nr43 = channel4.nr44 = 0;
+      } else {
+        // Power on: retain the always-on bits (4-6) in NR52
+        nr52 = (value & 0x80) | 0x70; // Bits 4-6 are always 1
+      }
       return;
     }
+
+    // If APU is off, ignore all writes except to NR52
+    if ((nr52 & 0x80) == 0) return;
 
     switch (address) {
       case MemoryRegisters.nr10:
@@ -214,7 +245,35 @@ class Audio {
           updateVolumes();
         }
         break;
+      default:
+        print(
+          "Unknown audio register write: 0x${address.toRadixString(16)} = $value",
+        );
     }
+  }
+
+  int readWaveform(int addr) {
+    if (!channel3.enabled) {
+      // Calculate the offset from the base address for the waveform RAM and return the value
+      return channel3.waveformRAM[addr - MemoryRegisters.waveRamStart];
+    }
+
+    // If channel is on, calculate the sample offset based on waveform index
+    int sampleOffset = channel3.waveformIndex >> 1;
+    return channel3.waveformRAM[sampleOffset];
+  }
+
+  int writeWaveform(int addr, int data) {
+    if (!channel3.enabled) {
+      // Calculate offset and write data to the waveform RAM if the channel is off
+      channel3.waveformRAM[addr - MemoryRegisters.waveRamStart] = data;
+      return data;
+    }
+
+    // If the channel is on, write to the current sample offset
+    int sampleOffset = channel3.waveformIndex >> 1;
+    channel3.waveformRAM[sampleOffset] = data;
+    return data;
   }
 
   void updateClockSpeed(int newClockSpeed) {
@@ -259,31 +318,20 @@ class Audio {
 
     switch (frameSequencer) {
       case 0:
-        // Step 0: Length counters
+      case 2:
+      case 4:
+      case 6:
         updateLengthCounters();
+        if (frameSequencer == 2 || frameSequencer == 6) channel1.updateSweep();
         break;
       case 1:
         // Step 1: Nothing
         break;
-      case 2:
-        // Step 2: Length counters, sweep
-        updateLengthCounters();
-        channel1.updateSweep();
-        break;
       case 3:
         // Step 3: Nothing
         break;
-      case 4:
-        // Step 4: Length counters
-        updateLengthCounters();
-        break;
       case 5:
         // Step 5: Nothing
-        break;
-      case 6:
-        // Step 6: Length counters, sweep
-        updateLengthCounters();
-        channel1.updateSweep();
         break;
       case 7:
         // Step 7: Envelopes

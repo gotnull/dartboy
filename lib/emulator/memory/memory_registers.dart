@@ -59,7 +59,9 @@ class MemoryRegisters {
 
   static const int nr15 = 0xFF;
 
-  static const int waveRam = 0x1F;
+  static const int waveRamStart = 0x30;
+
+  static const int waveRamEnd = 0x3F;
 
   // Channel 2: Volume Envelope Register (controls volume envelope for channel 2)
   static const int nr22 = 0x17;

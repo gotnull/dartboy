@@ -26,9 +26,9 @@ class Channel3 {
   int readNR30() => nr30 | 0x7F; // Bit 7 is read-only
   void writeNR30(int value) {
     nr30 = value;
-    dacEnabled = (nr30 & 0x80) != 0;
+    dacEnabled = (nr30 & 0x80) != 0; // Bit 7 controls DAC
     if (!dacEnabled) {
-      enabled = false;
+      enabled = false; // Disable channel if DAC is off
     }
   }
 
@@ -102,10 +102,16 @@ class Channel3 {
 
   // Advance the waveform index and update the sample buffer
   void advanceWaveform() {
-    waveformIndex = (waveformIndex + 1) % 32; // 32 samples
+    // Update waveformIndex and wrap it to 32 samples (0-31)
+    waveformIndex = (waveformIndex + 1) % 32;
+
+    // Calculate the byte index in waveformRAM
     int byteIndex = waveformIndex ~/ 2;
+
+    // Retrieve the byte from waveformRAM
     int sampleData = waveformRAM[byteIndex];
 
+    // Update sampleBuffer based on high or low nibble
     if (waveformIndex % 2 == 0) {
       // High nibble
       sampleBuffer = (sampleData >> 4) & 0x0F;

@@ -74,9 +74,9 @@ class Channel1 {
     volume = (nr12 >> 4) & 0x0F;
     envelopeIncrease = (nr12 & 0x08) != 0;
     envelopePeriod = nr12 & 0x07;
-    dacEnabled = (nr12 & 0xF8) != 0;
+    dacEnabled = (nr12 & 0xF8) != 0; // DAC enabled if bits 3-7 are not all zero
     if (!dacEnabled) {
-      enabled = false;
+      enabled = false; // Disable channel if DAC is off
     }
   }
 
@@ -152,7 +152,7 @@ class Channel1 {
 
   // Update envelope (called by frame sequencer)
   void updateEnvelope() {
-    if (envelopePeriod > 0) {
+    if (envelopePeriod > 0 && enabled) {
       envelopeTimer--;
       if (envelopeTimer <= 0) {
         envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
@@ -160,6 +160,11 @@ class Channel1 {
           volume++;
         } else if (!envelopeIncrease && volume > 0) {
           volume--;
+        }
+
+        // Disable envelope if volume reaches boundary
+        if (volume == 0 || volume == 15) {
+          envelopeTimer = 0;
         }
       }
     }
@@ -189,8 +194,12 @@ class Channel1 {
     int delta = shadowFrequency >> sweepShift;
     int newFrequency =
         sweepNegate ? shadowFrequency - delta : shadowFrequency + delta;
+
+    // Check for overflow and disable if out of range
     if (newFrequency > 2047) {
       enabled = false;
+    } else {
+      shadowFrequency = newFrequency;
     }
     return newFrequency & 0x7FF; // Ensure 11-bit frequency
   }

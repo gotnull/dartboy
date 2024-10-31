@@ -1,6 +1,6 @@
 import 'package:dartboy/emulator/cpu/cpu.dart';
 import 'package:dartboy/emulator/cpu/registers.dart';
-import 'package:dartboy/emulator/memory/memory_registers.dart';
+import 'package:dartboy/emulator/memory/memory_addresses.dart';
 
 /// Class to handle instruction implementation, instructions run on top of the CPU object.
 ///
@@ -16,12 +16,15 @@ class Instructions {
 
   static void nop(CPU cpu) {}
 
-  static void callccnn(CPU cpu, int op) {
-    int addr = (cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8));
-    if (cpu.registers.getFlag(0x4 | ((op >> 3) & 0x7))) {
-      cpu.pushWordSP(cpu.pc); // Save current PC
-      cpu.pc = addr; // Jump to new address
+  static bool callccnn(CPU cpu, int op) {
+    int addr = cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8);
+    int conditionCode = (op >> 3) & 0x03; // Extract condition code
+    bool conditionMet = cpu.registers.checkCondition(conditionCode);
+    if (conditionMet) {
+      cpu.pushWordSP(cpu.pc);
+      cpu.pc = addr;
     }
+    return conditionMet;
   }
 
   static void callnn(CPU cpu) {
@@ -62,7 +65,8 @@ class Instructions {
   }
 
   static void ldac(CPU cpu) {
-    cpu.registers.a = cpu.mmu.readByte(0xFF00 | cpu.registers.c);
+    cpu.registers.a =
+        cpu.mmu.readByte(MemoryAddresses.ioStart | cpu.registers.c);
   }
 
   static void addspn(CPU cpu) {
@@ -137,11 +141,13 @@ class Instructions {
   }
 
   static void ldffna(CPU cpu) {
-    cpu.mmu.writeByte(0xFF00 | cpu.nextUnsignedBytePC(), cpu.registers.a);
+    cpu.mmu.writeByte(
+        MemoryAddresses.ioStart | cpu.nextUnsignedBytePC(), cpu.registers.a);
   }
 
   static void ldhffca(CPU cpu) {
-    cpu.mmu.writeByte(0xFF00 | (cpu.registers.c & 0xFF), cpu.registers.a);
+    cpu.mmu.writeByte(
+        MemoryAddresses.ioStart | (cpu.registers.c & 0xFF), cpu.registers.a);
   }
 
   static void ldann(CPU cpu) {
@@ -485,10 +491,7 @@ class Instructions {
   }
 
   static void ret(CPU cpu) {
-    int lo = cpu.getUnsignedByte(cpu.sp); // Fetch lower byte from stack
-    int hi = cpu.getUnsignedByte(cpu.sp + 1); // Fetch upper byte from stack
-    cpu.sp += 2; // Increment stack pointer
-    cpu.pc = (hi << 8) | lo; // Set PC to the value retrieved from stack
+    cpu.pc = cpu.popWordSP(); // Pop return address into PC
   }
 
   static void xorn(CPU cpu) {
@@ -519,8 +522,8 @@ class Instructions {
   }
 
   static void di(CPU cpu) {
-    cpu.interruptsEnabled = false;
     // Just disabling interrupts, no delay needed
+    cpu.interruptsEnabled = false;
   }
 
   static void rstp(CPU cpu, int op) {
@@ -528,50 +531,42 @@ class Instructions {
     cpu.pc = op & 0x38; // Jump to the specific reset vector
   }
 
-  static void retc(CPU cpu, int op) {
-    if (cpu.registers.getFlag(0x4 | ((op >> 3) & 0x7))) {
-      cpu.pc =
-          (cpu.getUnsignedByte(cpu.sp + 1) << 8) | cpu.getUnsignedByte(cpu.sp);
-      cpu.sp += 2;
+  static bool retc(CPU cpu, int op) {
+    int conditionCode = (op >> 3) & 0x03; // Extract condition code
+    bool conditionMet = cpu.registers.checkCondition(conditionCode);
+    if (conditionMet) {
+      cpu.pc = cpu.popWordSP();
     }
+    return conditionMet;
   }
 
   static void halt(CPU cpu) {
-    // Check if there are pending interrupts
-    int enabledInterrupts =
-        cpu.mmu.readRegisterByte(MemoryRegisters.enabledInterrupts);
-    int requestedInterrupts =
-        cpu.mmu.readRegisterByte(MemoryRegisters.triggeredInterrupts);
-
-    // If interrupts are disabled (IME == false) but an interrupt is requested
-    if (!cpu.interruptsEnabled &&
-        (enabledInterrupts & requestedInterrupts) != 0) {
-      // The "HALT bug" case - skip halting and continue execution
-      // The CPU does not halt but continues execution
-      cpu.halted = false;
-    } else {
-      // Normal HALT behavior
-      cpu.halted = true;
-    }
+    cpu.halted = true;
   }
 
   static void ldhffnn(CPU cpu) {
-    cpu.registers.a = cpu.getUnsignedByte(0xFF00 | cpu.nextUnsignedBytePC());
+    cpu.registers.a =
+        cpu.getUnsignedByte(MemoryAddresses.ioStart | cpu.nextUnsignedBytePC());
   }
 
-  static void jrce(CPU cpu, int op) {
+  static bool jrce(CPU cpu, int op) {
     int e = cpu.nextSignedBytePC();
-
-    if (cpu.registers.getFlag((op >> 3) & 0x7)) {
-      cpu.pc += e;
+    int conditionCode = (op >> 3) & 0x03; // Extract condition code
+    bool conditionMet = cpu.registers.checkCondition(conditionCode);
+    if (conditionMet) {
+      cpu.pc = (cpu.pc + e) & 0xFFFF;
     }
+    return conditionMet;
   }
 
-  static void jpcnn(CPU cpu, int op) {
+  static bool jpcnn(CPU cpu, int op) {
     int addr = cpu.nextUnsignedBytePC() | (cpu.nextUnsignedBytePC() << 8);
-    if (cpu.registers.getFlag(0x4 | ((op >> 3) & 0x7))) {
-      cpu.pc = addr; // Jump to new address
+    int conditionCode = (op >> 3) & 0x03; // Extract condition code
+    bool conditionMet = cpu.registers.checkCondition(conditionCode);
+    if (conditionMet) {
+      cpu.pc = addr;
     }
+    return conditionMet;
   }
 
   static void daa(CPU cpu) {
@@ -718,7 +713,7 @@ class Instructions {
     }
 
     cpu.registers.a -= n;
-    if ((cpu.registers.a & 0xFF00) != 0) {
+    if ((cpu.registers.a & MemoryAddresses.ioStart) != 0) {
       cpu.registers.f |= Registers.carryFlag;
     }
 
@@ -764,29 +759,31 @@ class Instructions {
   }
 
   static void jphl(CPU cpu) {
-    cpu.pc = cpu.registers.getRegisterPairSP(Registers.hl) & 0xFFFF;
+    cpu.pc = cpu.registers.getRegisterPairSP(Registers.hl);
   }
 
   static void addhlrr(CPU cpu, int op) {
-    // Z is not affected is set if carry out of bit 11; reset otherwise
-    // N is reset is set if carry from bit 15; reset otherwise
     int pair = (op >> 4) & 0x3;
-    int ss = cpu.registers.getRegisterPairSP(pair);
+    int value = cpu.registers.getRegisterPairSP(pair);
     int hl = cpu.registers.getRegisterPairSP(Registers.hl);
 
-    cpu.registers.f &= Registers.zeroFlag;
+    cpu.registers.f &= ~Registers.subtractFlag; // Reset N flag
 
-    if (((hl & 0xFFF) + (ss & 0xFFF)) > 0xFFF) {
+    // Half-Carry check
+    if (((hl & 0x0FFF) + (value & 0x0FFF)) > 0x0FFF) {
       cpu.registers.f |= Registers.halfCarryFlag;
+    } else {
+      cpu.registers.f &= ~Registers.halfCarryFlag;
     }
 
-    hl += ss;
-
-    if (hl > 0xFFFF) {
+    // Carry check
+    if ((hl + value) > 0xFFFF) {
       cpu.registers.f |= Registers.carryFlag;
-      hl &= 0xFFFF;
+    } else {
+      cpu.registers.f &= ~Registers.carryFlag;
     }
 
+    hl = (hl + value) & 0xFFFF;
     cpu.registers.setRegisterPairSP(Registers.hl, hl);
   }
 
@@ -863,34 +860,26 @@ class Instructions {
   }
 
   static void reti(CPU cpu) {
-    cpu.interruptsEnabled = true;
-    cpu.pc =
-        (cpu.getUnsignedByte(cpu.sp + 1) << 8) | cpu.getUnsignedByte(cpu.sp);
-    cpu.sp += 2;
+    cpu.pc = cpu.popWordSP(); // Pop return address
+    cpu.interruptsEnabled = true; // Enable interrupts
   }
 
   static void lda16sp(CPU cpu) {
     int pos = ((cpu.nextUnsignedBytePC()) | (cpu.nextUnsignedBytePC() << 8));
-    cpu.mmu.writeByte(pos + 1, (cpu.sp & 0xFF00) >> 8);
+    cpu.mmu.writeByte(pos + 1, (cpu.sp & MemoryAddresses.ioStart) >> 8);
     cpu.mmu.writeByte(pos, (cpu.sp & 0x00FF));
   }
 
   static void poprr(CPU cpu, int op) {
     int pair = (op >> 4) & 0x3;
-
     int lo = cpu.popByteSP();
     int hi = cpu.popByteSP();
     cpu.registers.setRegisterPair(pair, hi, lo);
   }
 
   static void pushrr(CPU cpu, int op) {
-    // Get the register pair
     int pair = (op >> 4) & 0x3;
-
-    // Fetch the value from the register pair
     int val = cpu.registers.getRegisterPair(pair);
-
-    // Push the higher byte first, then the lower byte onto the stack
     cpu.pushWordSP(val);
   }
 

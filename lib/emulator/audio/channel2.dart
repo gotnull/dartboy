@@ -79,7 +79,10 @@ class Channel2 {
     if ((nr24 & 0x80) != 0) {
       trigger();
     }
-    if (!wasLengthEnabled && lengthEnabled && lengthCounter == 0 && frameSequencer == 0) {
+    if (!wasLengthEnabled &&
+        lengthEnabled &&
+        lengthCounter == 0 &&
+        frameSequencer == 0) {
       lengthCounter = 63;
     }
   }
@@ -131,6 +134,11 @@ class Channel2 {
           volume++;
         } else if (!envelopeIncrease && volume > 0) {
           volume--;
+        }
+
+        // Disable envelope if volume reaches boundary
+        if (volume == 0 || volume == 15) {
+          envelopeTimer = 0;
         }
       }
     }

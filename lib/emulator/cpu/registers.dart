@@ -211,6 +211,21 @@ class Registers {
     return value;
   }
 
+  bool checkCondition(int conditionCode) {
+    switch (conditionCode) {
+      case 0: // NZ (Not Zero)
+        return (f & zeroFlag) == 0;
+      case 1: // Z (Zero)
+        return (f & zeroFlag) != 0;
+      case 2: // NC (Not Carry)
+        return (f & carryFlag) == 0;
+      case 3: // C (Carry)
+        return (f & carryFlag) != 0;
+      default:
+        return false; // Should not reach here
+    }
+  }
+
   /// Fetches the world value of a registers pair, r is the register id as encoded by opcode (PUSH_rr).
   /// Can be used with a single word value as the second argument.
   /// Returns the value of the register

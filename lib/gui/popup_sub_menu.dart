@@ -161,6 +161,10 @@ class MyRomMenuState extends State<MyRomMenu> {
       displayName: "Games",
       subItems: [
         RomItem(
+          displayName: "Metal Gear Solid",
+          romPath: "assets/roms/Metal Gear Solid (USA).gbc",
+        ),
+        RomItem(
           displayName: "Zelda: Oracle of Seasons",
           romPath: "assets/roms/zelda.gbc",
         ),
