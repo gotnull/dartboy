@@ -3,6 +3,7 @@
 .dart_tool/
 lib/generated_plugin_registrant.dart
 build/
+assets/roms/
 
 # Prerequisites
 *.d
