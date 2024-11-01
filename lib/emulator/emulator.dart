@@ -64,7 +64,7 @@ class Emulator {
     );
 
     // Start recording audio when the ROM is loaded
-    cpu?.audio.init();
+    cpu?.apu.init();
   }
 
   void onGamepadEvent(GamepadEvent event) {
@@ -151,7 +151,7 @@ class Emulator {
       'Dart Boy: ${cpu?.cartridge.name}',
     );
 
-    cpu?.audio.init();
+    cpu?.apu.init();
   }
 
   /// Reset the emulator, stop running the code and unload the cartridge

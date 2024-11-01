@@ -1,12 +1,12 @@
 import 'dart:convert';
 
+import 'package:dartboy/emulator/audio/apu.dart';
 import 'package:dartboy/emulator/cpu/instructions.dart';
 import 'package:dartboy/emulator/cpu/registers.dart';
 import 'package:dartboy/emulator/graphics/ppu.dart';
 import 'package:dartboy/emulator/memory/cartridge.dart';
 import 'package:dartboy/emulator/memory/memory_registers.dart';
 import 'package:dartboy/emulator/memory/mmu/mmu.dart';
-import 'package:dartboy/emulator/audio/audio.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -33,7 +33,7 @@ class CPU {
   late PPU ppu;
 
   // Audio handles the audio
-  late Audio audio;
+  late APU apu;
 
   /// Whether the CPU is currently halted.
   bool halted;
@@ -105,8 +105,8 @@ class CPU {
     mmu = cartridge.createController(this);
     ppu = PPU(this);
     registers = Registers(this);
-    audio = Audio(clockSpeed);
-    audio.updateClockSpeed(clockSpeed); // Ensure Audio clock sync at start
+    apu = APU(clockSpeed);
+    apu.updateClockSpeed(clockSpeed); // Ensure Audio clock sync at start
 
     reset();
   }
@@ -116,7 +116,7 @@ class CPU {
     buttons.fillRange(0, 8, false);
 
     clockSpeed = frequency;
-    audio.updateClockSpeed(clockSpeed); // Ensure Audio is updated after reset
+    apu.updateClockSpeed(clockSpeed); // Ensure Audio is updated after reset
 
     doubleSpeed = false;
     divCycle = 0;
@@ -134,7 +134,7 @@ class CPU {
     registers.reset();
     ppu.reset();
     mmu.reset();
-    audio.reset();
+    apu.reset();
 
     windowManager.setTitle('Dart Boy');
   }
@@ -269,7 +269,7 @@ class CPU {
     }
 
     ppu.tick(delta);
-    audio.tick(delta);
+    apu.tick(delta);
   }
 
   /// Triggers a particular interrupt by writing the correct interrupt bit to the interrupt register.
@@ -756,7 +756,7 @@ class CPU {
     if (doubleSpeed != newDoubleSpeed) {
       doubleSpeed = newDoubleSpeed;
       clockSpeed = getActualClockSpeed(); // Update the current clock speed
-      audio.updateClockSpeed(clockSpeed); // Update audio's clock speed
+      apu.updateClockSpeed(clockSpeed); // Update audio's clock speed
     }
   }
 

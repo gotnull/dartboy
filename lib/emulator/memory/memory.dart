@@ -347,7 +347,7 @@ class Memory {
     // Audio Registers (NR10-NR52)
     else if (address >= MemoryRegisters.nr10 &&
         address <= MemoryRegisters.nr52) {
-      cpu.audio.writeNR(address, value);
+      cpu.apu.writeNR(address, value);
     }
     // OAM DMA transfer
     else if (address == MemoryRegisters.dma) {
@@ -433,7 +433,7 @@ class Memory {
     // Audio registers (NR10-NR52): Channel and Sound Control
     else if (address >= MemoryRegisters.nr10 &&
         address <= MemoryRegisters.nr52) {
-      return cpu.audio.readNR(address);
+      return cpu.apu.readNR(address);
     }
 
     return registers[address];

@@ -1,14 +1,14 @@
 # Dart Boy
 
 - Dart based GameBoy (and GameBoy Color) emulator that runs on desktop, mobile and web using the [Flutter](https://flutter.dev/) framework.
-- Project was developed using Flutter 1.5.5 and Dart 2.3.0 and tested on Windows and Android).
+- Project was developed using Flutter 1.5.5 and Dart 2.3.0 and tested on Windows and Android.
 - Supports MBC1, MBC3, MBC5 and basic cartridges, has basic support for [GameBoy Color](https://en.wikipedia.org/wiki/Game_Boy_Color) games. Does not support Super GameBoy specific features.
 - Full support for the Sharp [LR35902](https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html) CPU instruction set.
 - The emulator was built as a learning project and as a challenge, there are still a lot that can be done to improve.
 
   - [❌] Store battery backed game memory in .sav file.
   - [❌] MBC2 support
-  - [❌] Audio Support
+  - [✅] Audio Support (WIP)
   - [❌] Fix register signed data results.
 
 ![Screenshot 2024-10-15 at 4 45 35 pm](https://github.com/user-attachments/assets/d512eb2a-b78e-4ab9-aaa5-dd26747c0ec0)
@@ -22,9 +22,8 @@ before parodious.com went down. New official location: http://blargg.8bitalley.c
 
 | Test | Status |
 |----------|----------|
-| cgb_sound | ❌ |
 | 01-special.gb | ✅ |
-| 02-interrupts.gb | ❌ |
+| 02-interrupts.gb | ✅ |
 | 03-op sp,hl.gb | ✅ |
 | 04-op r,imm.gb | ✅ |
 | 05-op rp.gb | ✅ |
@@ -40,6 +39,7 @@ before parodious.com went down. New official location: http://blargg.8bitalley.c
 | mem_timing-2 | ❌ |
 | oam_bug | ❌ |
 | halt_bug.gb | ❌ |
+| cgb_sound | ❌ |
 
 ### Run the Emulator
 

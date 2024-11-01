@@ -35,9 +35,9 @@ class DartBoy extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'GBC',
+      title: 'Dart Boy',
       theme: ThemeData(primarySwatch: Colors.blue),
-      home: const MainScreen(title: 'GBC', key: Key("gbc")),
+      home: const MainScreen(title: 'Dart Boy', key: Key("dartBoy")),
       debugShowCheckedModeBanner: false,
       showPerformanceOverlay: false,
       showSemanticsDebugger: false,

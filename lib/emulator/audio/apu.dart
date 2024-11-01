@@ -35,7 +35,7 @@ final TerminateAudioDart terminateAudio = audioLib
     .lookup<NativeFunction<TerminateAudioNative>>('terminate_audio')
     .asFunction();
 
-class Audio {
+class APU {
   static const int frameSequencerRate = 512; // Hz
   static const int defaultSampleRate = 44100;
   static const int defaultBufferSize = 1024;
@@ -65,7 +65,7 @@ class Audio {
   int nr51 = 0;
   int nr52 = 0x80; // Sound on by default
 
-  Audio(clockSpeed) : cyclesPerSample = clockSpeed ~/ defaultSampleRate;
+  APU(clockSpeed) : cyclesPerSample = clockSpeed ~/ defaultSampleRate;
 
   Future<void> init() async {
     int result = initAudio(sampleRate, channels, bufferSize);
