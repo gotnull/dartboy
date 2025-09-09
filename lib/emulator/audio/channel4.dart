@@ -128,17 +128,17 @@ class Channel4 {
     if (frequencyTimer <= 0) frequencyTimer = 1; // Prevent negative values
   }
 
-  // Update method called every CPU cycle
+  // Update method called every CPU cycle - optimized for performance
   void tick(int cycles) {
     if (!enabled) return;
 
-    // Frequency timer - more precise timing for noise channel
-    for (int i = 0; i < cycles; i++) {
-      frequencyTimer--;
-      if (frequencyTimer <= 0) {
-        frequencyTimer = getFrequencyTimerPeriod();
-        clockLFSR();
-      }
+    // Frequency timer - optimized batch processing for noise channel
+    frequencyTimer -= cycles;
+    while (frequencyTimer <= 0) {
+      int period = getFrequencyTimerPeriod();
+      if (period <= 0) period = 1;
+      frequencyTimer += period;
+      clockLFSR();
     }
   }
 

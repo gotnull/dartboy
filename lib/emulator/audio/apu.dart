@@ -366,23 +366,30 @@ class APU {
     accumulatedCycles += cycles;
     frameSequencerCycles += cycles;
 
+    // Update each channel only if APU is powered on
+    channel1.tick(cycles);
+    channel2.tick(cycles);
+    channel3.tick(cycles);
+    channel4.tick(cycles);
+
     // Update frame sequencer every 8192 CPU cycles
     while (frameSequencerCycles >= cyclesPerFrameSequencer) {
       updateFrameSequencer();
       frameSequencerCycles -= cyclesPerFrameSequencer;
     }
 
-    // Generate audio samples at the correct intervals
-    while (accumulatedCycles >= cyclesPerSample) {
-      mixAndQueueAudioSample();
-      accumulatedCycles -= cyclesPerSample;
+    // Generate audio samples at the correct intervals (optimized)
+    if (accumulatedCycles >= cyclesPerSample) {
+      int samplesToGenerate = accumulatedCycles ~/ cyclesPerSample;
+      if (samplesToGenerate > 0) {
+        // Limit to prevent audio buffer overflow
+        samplesToGenerate = samplesToGenerate.clamp(1, 8);
+        for (int i = 0; i < samplesToGenerate; i++) {
+          mixAndQueueAudioSample();
+        }
+        accumulatedCycles -= samplesToGenerate * cyclesPerSample;
+      }
     }
-
-    // Update each channel only if APU is powered on
-    channel1.tick(cycles);
-    channel2.tick(cycles);
-    channel3.tick(cycles);
-    channel4.tick(cycles);
   }
 
   void updateFrameSequencer() {
@@ -497,38 +504,50 @@ class APU {
     return [leftSample, rightSample];
   }
 
+  // Pre-allocated buffer for audio samples to avoid malloc/free overhead
+  static final Uint8List _audioBuffer = Uint8List(4);
+  static final ByteData _audioByteData = _audioBuffer.buffer.asByteData();
+  static Pointer<Uint8>? _audioBufferPtr;
+  static int _queueSizeCheckCounter = 0;
+
   void queueAudioSample(int leftSample, int rightSample) {
-    // Check audio queue size to prevent excessive latency
-    try {
-      int queueSize = getQueuedAudioSize();
-      if (queueSize > 16384) { // If more than 16KB queued
-        clearQueuedAudio(); // Clear queue to reduce latency
+    // Initialize buffer pointer once
+    _audioBufferPtr ??= malloc.allocate<Uint8>(4);
+
+    // Check audio queue size occasionally to prevent excessive latency (every 100 samples)
+    if (++_queueSizeCheckCounter >= 100) {
+      _queueSizeCheckCounter = 0;
+      try {
+        int queueSize = getQueuedAudioSize();
+        if (queueSize > 16384) { // If more than 16KB queued
+          clearQueuedAudio(); // Clear queue to reduce latency
+        }
+      } catch (e) {
+        // If audio monitoring fails, continue without it
       }
-    } catch (e) {
-      // If audio monitoring fails, continue without it
     }
 
-    // Prepare a buffer for the stereo sample (4 bytes: 2 bytes per channel)
-    final buffer = Uint8List(4);
-    final byteData = buffer.buffer.asByteData();
-    byteData.setInt16(0, leftSample, Endian.little);
-    byteData.setInt16(2, rightSample, Endian.little);
+    // Use pre-allocated buffer to avoid memory allocation overhead
+    _audioByteData.setInt16(0, leftSample, Endian.little);
+    _audioByteData.setInt16(2, rightSample, Endian.little);
 
-    // Allocate memory and copy the buffer
-    final bufferPtr = malloc.allocate<Uint8>(4);
-    bufferPtr.asTypedList(4).setAll(0, buffer);
+    // Copy to native memory buffer
+    _audioBufferPtr!.asTypedList(4).setAll(0, _audioBuffer);
 
     // Stream the audio
-    streamAudio(bufferPtr, 4);
-
-    // Free the allocated memory
-    malloc.free(bufferPtr);
+    streamAudio(_audioBufferPtr!, 4);
   }
 
   Future<void> stopAudio() async {
     if (isInitialized) {
       terminateAudio();
       isInitialized = false;
+    }
+    
+    // Free the audio buffer when stopping
+    if (_audioBufferPtr != null) {
+      malloc.free(_audioBufferPtr!);
+      _audioBufferPtr = null;
     }
   }
 

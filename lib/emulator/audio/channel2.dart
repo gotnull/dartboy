@@ -105,17 +105,17 @@ class Channel2 {
     if (frequencyTimer <= 0) frequencyTimer = 1; // Prevent negative values
   }
 
-  // Update method called every CPU cycle
+  // Update method called every CPU cycle - optimized for performance
   void tick(int cycles) {
     if (!enabled) return;
 
-    // Frequency timer - more precise timing
-    for (int i = 0; i < cycles; i++) {
-      frequencyTimer--;
-      if (frequencyTimer <= 0) {
-        frequencyTimer = (2048 - frequency) * 4;
-        waveformIndex = (waveformIndex + 1) % 8;
-      }
+    // Frequency timer - optimized batch processing
+    frequencyTimer -= cycles;
+    while (frequencyTimer <= 0) {
+      int period = (2048 - frequency) * 4;
+      if (period <= 0) period = 1;
+      frequencyTimer += period;
+      waveformIndex = (waveformIndex + 1) % 8;
     }
   }
 

@@ -40,9 +40,9 @@ class MainScreenState extends State<MainScreen> {
     super.dispose();
   }
 
-  /// Start a Timer to refresh the HUD every 500ms
+  /// Start a Timer to refresh the HUD at reasonable intervals
   void _startHudUpdateTimer() {
-    hudUpdateTimer = Timer.periodic(const Duration(milliseconds: 4), (timer) {
+    hudUpdateTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (mounted) {
         setState(() {
           // Trigger rebuild to update the HUD
