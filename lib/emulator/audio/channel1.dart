@@ -59,7 +59,7 @@ class Channel1 {
   }
 
   // NR11: Sound Length / Waveform Duty
-  int readNR11() => nr11 | 0x3F; // Bits 0-5 are unused/read-only
+  int readNR11() => nr11 | 0x3F; // Bits 0-5 are write-only, read as 1
   void writeNR11(int value) {
     nr11 = value;
     dutyCycle = (nr11 >> 6) & 0x03;
@@ -89,21 +89,27 @@ class Channel1 {
   }
 
   // NR14: Frequency High and Control
-  int readNR14() => nr14 | 0xBF; // Bits 6-7 are unused/read-only
+  int readNR14() => nr14 | 0xBF; // Only bit 6 readable, others write-only
   void writeNR14(int value) {
     bool wasLengthEnabled = lengthEnabled;
     nr14 = value;
     lengthEnabled = (nr14 & 0x40) != 0;
     frequency = (nr14 & 0x07) << 8 | nr13;
     updateFrequencyTimer();
-    if ((nr14 & 0x80) != 0) {
-      trigger();
-    }
+    
+    // Length counter extra clocking when enabling length
     if (!wasLengthEnabled &&
         lengthEnabled &&
-        lengthCounter == 0 &&
+        lengthCounter > 0 &&
         (frameSequencer & 1) == 0) {
-      lengthCounter = 63;
+      lengthCounter--;
+      if (lengthCounter == 0) {
+        enabled = false;
+      }
+    }
+    
+    if ((nr14 & 0x80) != 0) {
+      trigger();
     }
   }
 
@@ -112,13 +118,21 @@ class Channel1 {
     enabled = dacEnabled;
     frequencyTimer = (2048 - frequency) * 4;
     waveformIndex = 0;
-    envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
+    envelopeTimer = envelopePeriod;
     volume = (nr12 >> 4) & 0x0F;
+    
+    // Length counter reloading
     if (lengthCounter == 0) {
       lengthCounter = 64;
+      // If length is enabled and frame sequencer is about to clock length, subtract 1
+      if (lengthEnabled && (frameSequencer & 1) == 0) {
+        lengthCounter = 63;
+      }
     }
+    
+    // Sweep trigger behavior
     shadowFrequency = frequency;
-    sweepTimer = sweepPeriod == 0 ? 8 : sweepPeriod;
+    sweepTimer = sweepPeriod > 0 ? sweepPeriod : 8;
     sweepEnabled = sweepPeriod != 0 || sweepShift != 0;
     if (sweepShift != 0) {
       calculateSweepFrequency();

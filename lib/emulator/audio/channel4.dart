@@ -57,19 +57,25 @@ class Channel4 {
   }
 
   // NR44: Counter/Consecutive; Initial
-  int readNR44() => nr44 | 0xBF; // Bits 6-7 are unused/read-only
+  int readNR44() => nr44 | 0xBF; // Only bit 6 readable, others write-only
   void writeNR44(int value) {
     bool wasLengthEnabled = lengthEnabled;
     nr44 = value;
     lengthEnabled = (nr44 & 0x40) != 0;
-    if ((nr44 & 0x80) != 0) {
-      trigger();
-    }
+    
+    // Length counter extra clocking when enabling length
     if (!wasLengthEnabled &&
         lengthEnabled &&
-        lengthCounter == 0 &&
+        lengthCounter > 0 &&
         (frameSequencer & 1) == 0) {
-      lengthCounter = 63;
+      lengthCounter--;
+      if (lengthCounter == 0) {
+        enabled = false;
+      }
+    }
+    
+    if ((nr44 & 0x80) != 0) {
+      trigger();
     }
   }
 
@@ -77,11 +83,18 @@ class Channel4 {
   void trigger() {
     enabled = dacEnabled;
     frequencyTimer = getFrequencyTimerPeriod();
-    envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
+    envelopeTimer = envelopePeriod;
     volume = (nr42 >> 4) & 0x0F;
+    
+    // Length counter reloading
     if (lengthCounter == 0) {
       lengthCounter = 64;
+      // If length is enabled and frame sequencer is about to clock length, subtract 1
+      if (lengthEnabled && (frameSequencer & 1) == 0) {
+        lengthCounter = 63;
+      }
     }
+    
     lfsr = 0x7FFF; // Reset LFSR to all ones
   }
 

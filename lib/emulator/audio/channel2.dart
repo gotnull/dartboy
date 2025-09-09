@@ -39,7 +39,7 @@ class Channel2 {
   Channel2();
 
   // NR21: Sound Length / Waveform Duty
-  int readNR21() => nr21 | 0x3F; // Bits 0-5 are unused/read-only
+  int readNR21() => nr21 | 0x3F; // Bits 0-5 are write-only, read as 1
   void writeNR21(int value) {
     nr21 = value;
     dutyCycle = (nr21 >> 6) & 0x03;
@@ -69,21 +69,27 @@ class Channel2 {
   }
 
   // NR24: Frequency High and Control
-  int readNR24() => nr24 | 0xBF; // Bits 6-7 are unused/read-only
+  int readNR24() => nr24 | 0xBF; // Only bit 6 readable, others write-only
   void writeNR24(int value) {
     bool wasLengthEnabled = lengthEnabled;
     nr24 = value;
     lengthEnabled = (nr24 & 0x40) != 0;
     frequency = (nr24 & 0x07) << 8 | nr23;
     updateFrequencyTimer();
-    if ((nr24 & 0x80) != 0) {
-      trigger();
-    }
+    
+    // Length counter extra clocking when enabling length
     if (!wasLengthEnabled &&
         lengthEnabled &&
-        lengthCounter == 0 &&
+        lengthCounter > 0 &&
         (frameSequencer & 1) == 0) {
-      lengthCounter = 63;
+      lengthCounter--;
+      if (lengthCounter == 0) {
+        enabled = false;
+      }
+    }
+    
+    if ((nr24 & 0x80) != 0) {
+      trigger();
     }
   }
 
@@ -92,10 +98,16 @@ class Channel2 {
     enabled = dacEnabled;
     frequencyTimer = (2048 - frequency) * 4;
     waveformIndex = 0;
-    envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
+    envelopeTimer = envelopePeriod;
     volume = (nr22 >> 4) & 0x0F;
+    
+    // Length counter reloading
     if (lengthCounter == 0) {
       lengthCounter = 64;
+      // If length is enabled and frame sequencer is about to clock length, subtract 1
+      if (lengthEnabled && (frameSequencer & 1) == 0) {
+        lengthCounter = 63;
+      }
     }
   }
 

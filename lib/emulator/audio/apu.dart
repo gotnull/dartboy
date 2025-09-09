@@ -214,8 +214,15 @@ class APU {
         if (channel3.enabled) channelStatus |= 0x04;
         if (channel4.enabled) channelStatus |= 0x08;
         return (nr52 & 0x80) | 0x70 | channelStatus; // Bit 7 = power, bits 4-6 = 1, bits 0-3 = channel status
+      case 0xFF15: // Unused register between NR14 and NR20
+        return 0xFF;
+      case 0xFF1F: // Unused register between NR24 and NR30  
+        return 0xFF;
       default:
-        print("Unknown audio register read: 0x${address.toRadixString(16)}");
+        // Only print unknown register messages for addresses that should be audio registers
+        if (address >= 0xFF10 && address <= 0xFF3F) {
+          print("Unknown audio register read: 0x${address.toRadixString(16)}");
+        }
         return 0xFF; // Return 0xFF for unmapped addresses
     }
   }
@@ -325,10 +332,15 @@ class APU {
           updateVolumes();
         }
         break;
+      case 0xFF15: // Unused register between NR14 and NR20 - ignore writes
+        break;
+      case 0xFF1F: // Unused register between NR24 and NR30 - ignore writes
+        break;
       default:
-        print(
-          "Unknown audio register write: 0x${address.toRadixString(16)} = $value",
-        );
+        // Only print unknown register messages for addresses that should be audio registers
+        if (address >= 0xFF10 && address <= 0xFF3F) {
+          print("Unknown audio register write: 0x${address.toRadixString(16)} = $value");
+        }
     }
   }
 
@@ -509,7 +521,6 @@ class APU {
   static final ByteData _audioByteData = _audioBuffer.buffer.asByteData();
   static Pointer<Uint8>? _audioBufferPtr;
   static int _queueSizeCheckCounter = 0;
-  static int _skipSamplesCounter = 0;
 
   void queueAudioSample(int leftSample, int rightSample) {
     // Initialize buffer pointer once

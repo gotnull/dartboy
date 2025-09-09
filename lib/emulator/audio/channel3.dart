@@ -54,20 +54,26 @@ class Channel3 {
   }
 
   // NR34: Frequency High and Control
-  int readNR34() => nr34 | 0xBF; // Bits 6-7 are unused/read-only
+  int readNR34() => nr34 | 0xBF; // Only bit 6 readable, others write-only
   void writeNR34(int value) {
     bool wasLengthEnabled = lengthEnabled;
     nr34 = value;
     lengthEnabled = (nr34 & 0x40) != 0;
     frequency = (nr34 & 0x07) << 8 | nr33;
-    if ((nr34 & 0x80) != 0) {
-      trigger();
-    }
+    
+    // Length counter extra clocking when enabling length
     if (!wasLengthEnabled &&
         lengthEnabled &&
-        lengthCounter == 0 &&
+        lengthCounter > 0 &&
         (frameSequencer & 1) == 0) {
-      lengthCounter = 255;
+      lengthCounter--;
+      if (lengthCounter == 0) {
+        enabled = false;
+      }
+    }
+    
+    if ((nr34 & 0x80) != 0) {
+      trigger();
     }
   }
 
@@ -79,9 +85,16 @@ class Channel3 {
     enabled = dacEnabled;
     frequencyTimer = (2048 - frequency) * 2;
     waveformIndex = 0;
+    
+    // Length counter reloading
     if (lengthCounter == 0) {
       lengthCounter = 256;
+      // If length is enabled and frame sequencer is about to clock length, subtract 1
+      if (lengthEnabled && (frameSequencer & 1) == 0) {
+        lengthCounter = 255;
+      }
     }
+    
     sampleBuffer = 0;
   }
 
