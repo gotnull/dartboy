@@ -182,6 +182,8 @@ class Memory {
     }
     if (address >= MemoryAddresses.cartridgeRomSwitchableStart &&
         address < MemoryAddresses.cartridgeRomEnd) {
+      // Temporary fix to prevent RangeError
+      romPageStart = min(romPageStart, cpu.cartridge.data.length - Memory.romPageSize);
       return cpu.cartridge.data[
           romPageStart + address - MemoryAddresses.cartridgeRomSwitchableStart];
     }

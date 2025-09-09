@@ -24,7 +24,7 @@ $(TARGET): $(SRC)
 
 # Rule to copy the necessary dylibs to the destination directory
 copy_libs:
-	sudo cp libaudio.dylib libSDL2-2.0.0.dylib $(DEST_DIR)
+	cp libaudio.dylib libSDL2-2.0.0.dylib $(DEST_DIR)
 
 # Clean the build
 clean:

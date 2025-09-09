@@ -1,7 +1,7 @@
 #ifndef AUDIO_H
 #define AUDIO_H
 
-#include "/opt/homebrew/Cellar/sdl2/2.30.8/include/SDL2/SDL.h"
+#include <SDL.h>
 
 int is_audio_device_active();
 

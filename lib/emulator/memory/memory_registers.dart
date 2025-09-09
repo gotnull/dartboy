@@ -54,14 +54,18 @@ class MemoryRegisters {
   // Channel 1: Frequency High/Control Register (upper 3 bits of frequency and control for starting/stopping sound)
   static const int nr14 = 0x14;
 
+  // Channel 2: Sound length & Duty cycle (NR21 in Pandocs)
+  static const int nr20 = 0x15;
+
   // Channel 2: Sound Length/Wave Duty Register (controls length and duty cycle of the waveform)
   static const int nr21 = 0x16;
-
-  static const int nr15 = 0xFF;
 
   static const int waveRamStart = 0x30;
 
   static const int waveRamEnd = 0x3F;
+
+  // Channel 4: Sound Length Register (length of the noise sound)
+  static const int nr40 = 0x1F;
 
   // Channel 2: Volume Envelope Register (controls volume envelope for channel 2)
   static const int nr22 = 0x17;
