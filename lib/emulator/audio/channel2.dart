@@ -69,7 +69,7 @@ class Channel2 {
   }
 
   // NR24: Frequency High and Control
-  int readNR24() => 0xFF; // Write-only register
+  int readNR24() => nr24 | 0xBF; // Bits 6-7 are unused/read-only
   void writeNR24(int value) {
     bool wasLengthEnabled = lengthEnabled;
     nr24 = value;
@@ -82,8 +82,8 @@ class Channel2 {
     if (!wasLengthEnabled &&
         lengthEnabled &&
         lengthCounter == 0 &&
-        frameSequencer % 2 != 0) {
-      lengthCounter = 64;
+        frameSequencer == 0) {
+      lengthCounter = 63;
     }
   }
 
@@ -148,7 +148,8 @@ class Channel2 {
   int getOutput() {
     if (!enabled || !dacEnabled) return 0;
     int dutyValue = dutyPatterns[dutyCycle][waveformIndex];
-    return dutyValue * volume;
+    int sample = dutyValue == 0 ? -volume : volume;
+    return sample;
   }
 
   // Reset the channel

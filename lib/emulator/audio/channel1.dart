@@ -89,7 +89,7 @@ class Channel1 {
   }
 
   // NR14: Frequency High and Control
-  int readNR14() => 0xFF; // Write-only register
+  int readNR14() => nr14 | 0xBF; // Bits 6-7 are unused/read-only
   void writeNR14(int value) {
     bool wasLengthEnabled = lengthEnabled;
     nr14 = value;
@@ -102,8 +102,8 @@ class Channel1 {
     if (!wasLengthEnabled &&
         lengthEnabled &&
         lengthCounter == 0 &&
-        frameSequencer % 2 != 0) {
-      lengthCounter = 64;
+        frameSequencer == 0) {
+      lengthCounter = 63;
     }
   }
 
@@ -208,7 +208,8 @@ class Channel1 {
   int getOutput() {
     if (!enabled || !dacEnabled) return 0;
     int dutyValue = dutyPatterns[dutyCycle][waveformIndex];
-    return dutyValue * volume;
+    int sample = dutyValue == 0 ? -volume : volume;
+    return sample;
   }
 
   // Reset the channel

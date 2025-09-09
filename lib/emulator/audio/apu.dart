@@ -45,9 +45,9 @@ class APU {
   final int bufferSize = 1024;
   final int channels = 2;
 
-  double cyclesPerSample;
+  int cyclesPerSample;
   int cyclesPerFrameSequencer = 8192; // 4194304 / 512
-  double accumulatedCycles = 0.0;
+  int accumulatedCycles = 0;
   int frameSequencerCycles = 0;
   int frameSequencer = 0;
 
@@ -65,7 +65,7 @@ class APU {
   int nr51 = 0;
   int nr52 = 0x80; // Sound on by default
 
-  APU(clockSpeed) : cyclesPerSample = clockSpeed / defaultSampleRate;
+  APU(clockSpeed) : cyclesPerSample = clockSpeed ~/ defaultSampleRate;
 
   Future<void> init() async {
     int result = initAudio(sampleRate, channels, bufferSize);
@@ -163,7 +163,6 @@ class APU {
       } else {
         // Power on: retain the always-on bits (4-6) in NR52
         nr52 = (value & 0x80) | 0x70; // Bits 4-6 are always 1
-        frameSequencer = 0;
       }
       return;
     }
@@ -278,7 +277,7 @@ class APU {
   }
 
   void updateClockSpeed(int newClockSpeed) {
-    cyclesPerSample = newClockSpeed / sampleRate;
+    cyclesPerSample = newClockSpeed ~/ sampleRate;
     // cyclesPerFrameSequencer remains at 8192, as per Game Boy hardware
   }
 
@@ -393,13 +392,11 @@ class APU {
     left = (left * leftVolume) ~/ 7; // leftVolume ranges from 0 to 7
     right = (right * rightVolume) ~/ 7;
 
-    // Now convert the summed output (0-60) to the DAC range (-8 to +7).
-    left = (left ~/ 4) - 8;
-    right = (right ~/ 4) - 8;
+    // The Game Boy's DAC output ranges from -8 to +7
+    // To output 16-bit samples, we scale the value accordingly
+    // For example, scale -8 to -32768 and +7 to +32767
 
-    // Scaling factor for 16-bit audio (from -8 to +7 to -32768 to +32767)
-    // Max value 7 maps to 32767. Min value -8 maps to -32768.
-    // Scaling factor is 32767 / 7.
+    // Scaling factor for 16-bit audio (from 4-bit Game Boy audio)
     const int scalingFactor = 32767 ~/ 7;
 
     left = (left * scalingFactor).clamp(-32768, 32767);
@@ -408,25 +405,22 @@ class APU {
     return [left, right];
   }
 
-  final int audioBufferSize = 1024 * 4; // 1024 samples, 2 channels, 2 bytes per sample
-  final Uint8List audioBuffer = Uint8List(1024 * 4);
-  int audioBufferIndex = 0;
-
   void queueAudioSample(int leftSample, int rightSample) {
-    if (!isInitialized) return;
+    // Prepare a buffer for the stereo sample (4 bytes: 2 bytes per channel)
+    final buffer = Uint8List(4);
+    final byteData = buffer.buffer.asByteData();
+    byteData.setInt16(0, leftSample, Endian.little);
+    byteData.setInt16(2, rightSample, Endian.little);
 
-    final byteData = audioBuffer.buffer.asByteData();
-    byteData.setInt16(audioBufferIndex, leftSample, Endian.little);
-    byteData.setInt16(audioBufferIndex + 2, rightSample, Endian.little);
-    audioBufferIndex += 4;
+    // Allocate memory and copy the buffer
+    final bufferPtr = malloc.allocate<Uint8>(4);
+    bufferPtr.asTypedList(4).setAll(0, buffer);
 
-    if (audioBufferIndex >= audioBufferSize) {
-      final bufferPtr = malloc.allocate<Uint8>(audioBufferSize);
-      bufferPtr.asTypedList(audioBufferSize).setAll(0, audioBuffer);
-      streamAudio(bufferPtr, audioBufferSize);
-      malloc.free(bufferPtr);
-      audioBufferIndex = 0;
-    }
+    // Stream the audio
+    streamAudio(bufferPtr, 4);
+
+    // Free the allocated memory
+    malloc.free(bufferPtr);
   }
 
   Future<void> stopAudio() async {
