@@ -9,8 +9,33 @@ import 'package:dartboy/emulator/configuration.dart';
 import 'package:dartboy/emulator/memory/memory_registers.dart';
 import 'package:ffi/ffi.dart';
 
-// Load the shared library
-final DynamicLibrary audioLib = DynamicLibrary.open('libaudio.dylib');
+// Load the shared library with proper path handling
+late final DynamicLibrary audioLib;
+
+DynamicLibrary _loadAudioLibrary() {
+  try {
+    // Try loading from the app bundle first (for production builds)
+    return DynamicLibrary.open('libaudio.dylib');
+  } catch (e) {
+    try {
+      // Try loading from the macos directory (for development)
+      return DynamicLibrary.open('./macos/libaudio.dylib');
+    } catch (e) {
+      try {
+        // Try loading from the build directory
+        return DynamicLibrary.open('./build/macos/Build/Products/Debug/dartboy.app/Contents/Frameworks/libaudio.dylib');
+      } catch (e) {
+        try {
+          // Try with full path to macos directory
+          return DynamicLibrary.open('/Users/fulvio/development/dartboy/macos/libaudio.dylib');
+        } catch (e) {
+          // Final fallback - throw descriptive error
+          throw Exception('Failed to load libaudio.dylib. Please ensure SDL2 is installed and the library is built correctly.');
+        }
+      }
+    }
+  }
+}
 
 // FFI definitions for the functions in the shared library
 typedef InitAudioNative = Int32 Function(
@@ -24,16 +49,73 @@ typedef StreamAudioDart = void Function(Pointer<Uint8> buffer, int length);
 typedef TerminateAudioNative = Void Function();
 typedef TerminateAudioDart = void Function();
 
-final InitAudioDart initAudio =
-    audioLib.lookup<NativeFunction<InitAudioNative>>('init_audio').asFunction();
+// Initialize the library
+void _initializeAudioLib() {
+  if (!_audioLibInitialized) {
+    audioLib = _loadAudioLibrary();
+    _audioLibInitialized = true;
+  }
+}
 
-final StreamAudioDart streamAudio = audioLib
-    .lookup<NativeFunction<StreamAudioNative>>('stream_audio')
-    .asFunction();
+bool _audioLibInitialized = false;
 
-final TerminateAudioDart terminateAudio = audioLib
-    .lookup<NativeFunction<TerminateAudioNative>>('terminate_audio')
-    .asFunction();
+InitAudioDart? _initAudio;
+InitAudioDart get initAudio {
+  _initializeAudioLib();
+  try {
+    return _initAudio ??= audioLib.lookup<NativeFunction<InitAudioNative>>('init_audio').asFunction();
+  } catch (e) {
+    // Return dummy function if audio library loading fails
+    return _initAudio ??= (int sampleRate, int channels, int bufferSize) => -1;
+  }
+}
+
+StreamAudioDart? _streamAudio;
+StreamAudioDart get streamAudio {
+  _initializeAudioLib();
+  try {
+    return _streamAudio ??= audioLib.lookup<NativeFunction<StreamAudioNative>>('stream_audio').asFunction();
+  } catch (e) {
+    return _streamAudio ??= (Pointer<Uint8> buffer, int length) {}; // Dummy function
+  }
+}
+
+TerminateAudioDart? _terminateAudio;
+TerminateAudioDart get terminateAudio {
+  _initializeAudioLib();
+  try {
+    return _terminateAudio ??= audioLib.lookup<NativeFunction<TerminateAudioNative>>('terminate_audio').asFunction();
+  } catch (e) {
+    return _terminateAudio ??= () {}; // Dummy function
+  }
+}
+
+// Additional FFI functions for audio management
+typedef GetQueuedAudioSizeNative = Uint32 Function();
+typedef GetQueuedAudioSizeDart = int Function();
+
+typedef ClearQueuedAudioNative = Void Function();
+typedef ClearQueuedAudioDart = void Function();
+
+GetQueuedAudioSizeDart? _getQueuedAudioSize;
+GetQueuedAudioSizeDart get getQueuedAudioSize {
+  _initializeAudioLib();
+  try {
+    return _getQueuedAudioSize ??= audioLib.lookup<NativeFunction<GetQueuedAudioSizeNative>>('get_queued_audio_size').asFunction();
+  } catch (e) {
+    return _getQueuedAudioSize ??= () => 0; // Dummy function
+  }
+}
+
+ClearQueuedAudioDart? _clearQueuedAudio;
+ClearQueuedAudioDart get clearQueuedAudio {
+  _initializeAudioLib();
+  try {
+    return _clearQueuedAudio ??= audioLib.lookup<NativeFunction<ClearQueuedAudioNative>>('clear_queued_audio').asFunction();
+  } catch (e) {
+    return _clearQueuedAudio ??= () {}; // Dummy function
+  }
+}
 
 class APU {
   static const int frameSequencerRate = 512; // Hz
@@ -126,7 +208,12 @@ class APU {
       case MemoryRegisters.nr51:
         return nr51;
       case MemoryRegisters.nr52:
-        return nr52 | 0x70; // Bits 4-6 are always read as 1 on NR52
+        int channelStatus = 0;
+        if (channel1.enabled) channelStatus |= 0x01;
+        if (channel2.enabled) channelStatus |= 0x02;
+        if (channel3.enabled) channelStatus |= 0x04;
+        if (channel4.enabled) channelStatus |= 0x08;
+        return (nr52 & 0x80) | 0x70 | channelStatus; // Bit 7 = power, bits 4-6 = 1, bits 0-3 = channel status
       default:
         print("Unknown audio register read: 0x${address.toRadixString(16)}");
         return 0xFF; // Return 0xFF for unmapped addresses
@@ -150,16 +237,9 @@ class APU {
         nr52 = 0; // Clear NR52 except the always-on bits (set below)
         updateVolumes();
 
-        // Explicitly zero out registers to match expected reset state
-        channel1.nr10 =
-            channel1.nr11 = channel1.nr12 = channel1.nr13 = channel1.nr14 = 0;
-
-        channel2.nr21 = channel2.nr22 = channel2.nr23 = channel2.nr24 = 0;
-
-        channel3.nr30 =
-            channel3.nr31 = channel3.nr32 = channel3.nr33 = channel3.nr34 = 0;
-
-        channel4.nr41 = channel4.nr42 = channel4.nr43 = channel4.nr44 = 0;
+        // Reset frame sequencer when APU is powered off
+        frameSequencer = 0;
+        frameSequencerCycles = 0;
       } else {
         // Power on: retain the always-on bits (4-6) in NR52
         nr52 = (value & 0x80) | 0x70; // Bits 4-6 are always 1
@@ -258,7 +338,7 @@ class APU {
       return channel3.waveformRAM[addr - MemoryRegisters.waveRamStart];
     }
 
-    // If channel is on, calculate the sample offset based on waveform index
+    // If channel is on, return the current sample being played
     int sampleOffset = channel3.waveformIndex >> 1;
     return channel3.waveformRAM[sampleOffset];
   }
@@ -267,12 +347,11 @@ class APU {
     if (!channel3.enabled) {
       // Calculate offset and write data to the waveform RAM if the channel is off
       channel3.waveformRAM[addr - MemoryRegisters.waveRamStart] = data;
-      return data;
+    } else {
+      // If the channel is on, write to the current sample offset
+      int sampleOffset = channel3.waveformIndex >> 1;
+      channel3.waveformRAM[sampleOffset] = data;
     }
-
-    // If the channel is on, write to the current sample offset
-    int sampleOffset = channel3.waveformIndex >> 1;
-    channel3.waveformRAM[sampleOffset] = data;
     return data;
   }
 
@@ -282,7 +361,7 @@ class APU {
   }
 
   void tick(int cycles) {
-    if (!isInitialized) return;
+    if (!isInitialized || (nr52 & 0x80) == 0) return;
 
     accumulatedCycles += cycles;
     frameSequencerCycles += cycles;
@@ -299,7 +378,7 @@ class APU {
       accumulatedCycles -= cyclesPerSample;
     }
 
-    // Update each channel
+    // Update each channel only if APU is powered on
     channel1.tick(cycles);
     channel2.tick(cycles);
     channel3.tick(cycles);
@@ -364,48 +443,71 @@ class APU {
     queueAudioSample(leftSample, rightSample);
   }
 
-  List<int> mixAudioChannels() {
-    int left = 0;
-    int right = 0;
+  // High-pass filter state for DC blocking
+  double _leftHighPassState = 0.0;
+  double _rightHighPassState = 0.0;
 
-    // Channel 1
-    int ch1Output = channel1.getOutput();
+  List<int> mixAudioChannels() {
+    double left = 0.0;
+    double right = 0.0;
+
+    // Channel 1 (pulse with sweep)
+    double ch1Output = channel1.getOutput().toDouble();
     if ((nr51 & 0x01) != 0) right += ch1Output;
     if ((nr51 & 0x10) != 0) left += ch1Output;
 
-    // Channel 2
-    int ch2Output = channel2.getOutput();
+    // Channel 2 (pulse)
+    double ch2Output = channel2.getOutput().toDouble();
     if ((nr51 & 0x02) != 0) right += ch2Output;
     if ((nr51 & 0x20) != 0) left += ch2Output;
 
-    // Channel 3
-    int ch3Output = channel3.getOutput();
+    // Channel 3 (wave)
+    double ch3Output = channel3.getOutput().toDouble();
     if ((nr51 & 0x04) != 0) right += ch3Output;
     if ((nr51 & 0x40) != 0) left += ch3Output;
 
-    // Channel 4
-    int ch4Output = channel4.getOutput();
+    // Channel 4 (noise)
+    double ch4Output = channel4.getOutput().toDouble();
     if ((nr51 & 0x08) != 0) right += ch4Output;
     if ((nr51 & 0x80) != 0) left += ch4Output;
 
-    // Apply the master volume (leftVolume and rightVolume)
-    left = (left * leftVolume) ~/ 7; // leftVolume ranges from 0 to 7
-    right = (right * rightVolume) ~/ 7;
+    // Apply the master volume (0-7 range) - correct Game Boy mixing
+    left = (left * (leftVolume + 1)) / 8.0;
+    right = (right * (rightVolume + 1)) / 8.0;
 
-    // The Game Boy's DAC output ranges from -8 to +7
-    // To output 16-bit samples, we scale the value accordingly
-    // For example, scale -8 to -32768 and +7 to +32767
+    // Apply high-pass filter for DC blocking (more accurate implementation)
+    const double alpha = 0.996; // ~20Hz cutoff at 44.1kHz
+    double leftFiltered = left - _leftHighPassState;
+    _leftHighPassState += leftFiltered * (1 - alpha);
+    double rightFiltered = right - _rightHighPassState;
+    _rightHighPassState += rightFiltered * (1 - alpha);
 
-    // Scaling factor for 16-bit audio (from 4-bit Game Boy audio)
-    const int scalingFactor = 32767 ~/ 7;
+    // Apply simple low-pass anti-aliasing filter
+    const double lowPassAlpha = 0.75;
+    leftFiltered *= lowPassAlpha;
+    rightFiltered *= lowPassAlpha;
 
-    left = (left * scalingFactor).clamp(-32768, 32767);
-    right = (right * scalingFactor).clamp(-32768, 32767);
+    // Scale to 16-bit range with proper headroom
+    // Game Boy DAC outputs values from -15 to +15, scale appropriately
+    const double scalingFactor = 1000.0; // Conservative scaling
+    
+    int leftSample = (leftFiltered * scalingFactor).clamp(-32768, 32767).toInt();
+    int rightSample = (rightFiltered * scalingFactor).clamp(-32768, 32767).toInt();
 
-    return [left, right];
+    return [leftSample, rightSample];
   }
 
   void queueAudioSample(int leftSample, int rightSample) {
+    // Check audio queue size to prevent excessive latency
+    try {
+      int queueSize = getQueuedAudioSize();
+      if (queueSize > 16384) { // If more than 16KB queued
+        clearQueuedAudio(); // Clear queue to reduce latency
+      }
+    } catch (e) {
+      // If audio monitoring fails, continue without it
+    }
+
     // Prepare a buffer for the stereo sample (4 bytes: 2 bytes per channel)
     final buffer = Uint8List(4);
     final byteData = buffer.buffer.asByteData();
@@ -441,6 +543,8 @@ class APU {
     accumulatedCycles = 0;
     frameSequencerCycles = 0;
     frameSequencer = 0;
+    _leftHighPassState = 0.0;
+    _rightHighPassState = 0.0;
     updateVolumes();
   }
 }

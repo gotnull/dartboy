@@ -9,6 +9,9 @@ static SDL_AudioDeviceID audio_device;
 // SDL audio specification
 static SDL_AudioSpec audio_spec;
 
+// Audio buffer management
+static const int MAX_QUEUED_AUDIO = 8192; // Maximum bytes to queue
+
 int is_audio_device_active()
 {
   return SDL_GetAudioDeviceStatus(audio_device) == SDL_AUDIO_PLAYING;
@@ -44,10 +47,23 @@ int init_audio(int sample_rate, int channels, int buffer_size)
   return 0;
 }
 
-// Stream audio data to SDL
+// Stream audio data to SDL with buffer management
 void stream_audio(const void *buffer, int length)
 {
-  SDL_QueueAudio(audio_device, buffer, length);
+  // Check if we have too much audio queued to prevent excessive latency
+  Uint32 queued_bytes = SDL_GetQueuedAudioSize(audio_device);
+  
+  // If we have too much audio queued, clear some of it to prevent lag
+  if (queued_bytes > MAX_QUEUED_AUDIO) {
+    SDL_ClearQueuedAudio(audio_device);
+  }
+  
+  // Queue the new audio data
+  if (SDL_QueueAudio(audio_device, buffer, length) < 0) {
+    // If queueing fails, we might need to clear the queue and try again
+    SDL_ClearQueuedAudio(audio_device);
+    SDL_QueueAudio(audio_device, buffer, length);
+  }
 }
 
 // Terminate audio and clean up SDL
@@ -55,6 +71,18 @@ void terminate_audio(void)
 {
   SDL_CloseAudioDevice(audio_device);
   SDL_Quit();
+}
+
+// Get queued audio size
+Uint32 get_queued_audio_size()
+{
+  return SDL_GetQueuedAudioSize(audio_device);
+}
+
+// Clear queued audio
+void clear_queued_audio()
+{
+  SDL_ClearQueuedAudio(audio_device);
 }
 
 // Get the last SDL error message

@@ -68,7 +68,7 @@ class Channel4 {
     if (!wasLengthEnabled &&
         lengthEnabled &&
         lengthCounter == 0 &&
-        frameSequencer == 0) {
+        (frameSequencer & 1) == 0) {
       lengthCounter = 63;
     }
   }
@@ -79,7 +79,9 @@ class Channel4 {
     frequencyTimer = getFrequencyTimerPeriod();
     envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
     volume = (nr42 >> 4) & 0x0F;
-    lengthCounter = lengthCounter == 0 ? 64 : lengthCounter;
+    if (lengthCounter == 0) {
+      lengthCounter = 64;
+    }
     lfsr = 0x7FFF; // Reset LFSR to all ones
   }
 
@@ -123,17 +125,20 @@ class Channel4 {
   // Update the frequency timer based on NR43
   void updateFrequencyTimer() {
     frequencyTimer = getFrequencyTimerPeriod();
+    if (frequencyTimer <= 0) frequencyTimer = 1; // Prevent negative values
   }
 
   // Update method called every CPU cycle
   void tick(int cycles) {
     if (!enabled) return;
 
-    // Frequency timer
-    frequencyTimer -= cycles;
-    while (frequencyTimer <= 0) {
-      frequencyTimer += getFrequencyTimerPeriod();
-      clockLFSR();
+    // Frequency timer - more precise timing for noise channel
+    for (int i = 0; i < cycles; i++) {
+      frequencyTimer--;
+      if (frequencyTimer <= 0) {
+        frequencyTimer = getFrequencyTimerPeriod();
+        clockLFSR();
+      }
     }
   }
 
@@ -159,7 +164,7 @@ class Channel4 {
 
   // Update envelope (called by frame sequencer)
   void updateEnvelope() {
-    if (envelopePeriod > 0) {
+    if (envelopePeriod > 0 && enabled) {
       envelopeTimer--;
       if (envelopeTimer <= 0) {
         envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;

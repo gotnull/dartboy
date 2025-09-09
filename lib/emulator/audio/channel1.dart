@@ -102,7 +102,7 @@ class Channel1 {
     if (!wasLengthEnabled &&
         lengthEnabled &&
         lengthCounter == 0 &&
-        frameSequencer == 0) {
+        (frameSequencer & 1) == 0) {
       lengthCounter = 63;
     }
   }
@@ -114,7 +114,9 @@ class Channel1 {
     waveformIndex = 0;
     envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
     volume = (nr12 >> 4) & 0x0F;
-    lengthCounter = lengthCounter == 0 ? 64 : lengthCounter;
+    if (lengthCounter == 0) {
+      lengthCounter = 64;
+    }
     shadowFrequency = frequency;
     sweepTimer = sweepPeriod == 0 ? 8 : sweepPeriod;
     sweepEnabled = sweepPeriod != 0 || sweepShift != 0;
@@ -126,17 +128,20 @@ class Channel1 {
   // Update the frequency timer based on the current frequency
   void updateFrequencyTimer() {
     frequencyTimer = (2048 - frequency) * 4;
+    if (frequencyTimer <= 0) frequencyTimer = 1; // Prevent negative values
   }
 
   // Update method called every CPU cycle
   void tick(int cycles) {
     if (!enabled) return;
 
-    // Frequency timer
-    frequencyTimer -= cycles;
-    while (frequencyTimer <= 0) {
-      frequencyTimer += (2048 - frequency) * 4;
-      waveformIndex = (waveformIndex + 1) % 8;
+    // Frequency timer - more precise timing
+    for (int i = 0; i < cycles; i++) {
+      frequencyTimer--;
+      if (frequencyTimer <= 0) {
+        frequencyTimer = (2048 - frequency) * 4;
+        waveformIndex = (waveformIndex + 1) % 8;
+      }
     }
   }
 
@@ -177,13 +182,11 @@ class Channel1 {
       if (sweepTimer <= 0) {
         sweepTimer = sweepPeriod == 0 ? 8 : sweepPeriod;
         int newFrequency = calculateSweepFrequency();
-        if (newFrequency <= 2047 && sweepShift != 0) {
+        if (newFrequency <= 2047 && sweepShift != 0 && enabled) {
           frequency = newFrequency;
           shadowFrequency = newFrequency;
           updateFrequencyTimer();
           calculateSweepFrequency(); // Second calculation for overflow check
-        } else {
-          enabled = false;
         }
       }
     }
@@ -198,9 +201,9 @@ class Channel1 {
     // Check for overflow and disable if out of range
     if (newFrequency > 2047) {
       enabled = false;
-    } else {
-      shadowFrequency = newFrequency;
+      return newFrequency & 0x7FF; // Return masked value even if disabled
     }
+    
     return newFrequency & 0x7FF; // Ensure 11-bit frequency
   }
 

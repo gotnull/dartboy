@@ -66,7 +66,7 @@ class Channel3 {
     if (!wasLengthEnabled &&
         lengthEnabled &&
         lengthCounter == 0 &&
-        frameSequencer == 0) {
+        (frameSequencer & 1) == 0) {
       lengthCounter = 255;
     }
   }
@@ -79,24 +79,29 @@ class Channel3 {
     enabled = dacEnabled;
     frequencyTimer = (2048 - frequency) * 2;
     waveformIndex = 0;
-    lengthCounter = lengthCounter == 0 ? 256 : lengthCounter;
+    if (lengthCounter == 0) {
+      lengthCounter = 256;
+    }
     sampleBuffer = 0;
   }
 
   // Update the frequency timer based on the current frequency
   void updateFrequencyTimer() {
     frequencyTimer = (2048 - frequency) * 2;
+    if (frequencyTimer <= 0) frequencyTimer = 1; // Prevent negative values
   }
 
   // Update method called every CPU cycle
   void tick(int cycles) {
     if (!enabled) return;
 
-    // Frequency timer
-    frequencyTimer -= cycles;
-    while (frequencyTimer <= 0) {
-      frequencyTimer += (2048 - frequency) * 2;
-      advanceWaveform();
+    // Frequency timer - more precise timing for wave channel
+    for (int i = 0; i < cycles; i++) {
+      frequencyTimer--;
+      if (frequencyTimer <= 0) {
+        frequencyTimer = (2048 - frequency) * 2;
+        advanceWaveform();
+      }
     }
   }
 

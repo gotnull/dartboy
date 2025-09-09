@@ -82,7 +82,7 @@ class Channel2 {
     if (!wasLengthEnabled &&
         lengthEnabled &&
         lengthCounter == 0 &&
-        frameSequencer == 0) {
+        (frameSequencer & 1) == 0) {
       lengthCounter = 63;
     }
   }
@@ -94,23 +94,28 @@ class Channel2 {
     waveformIndex = 0;
     envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
     volume = (nr22 >> 4) & 0x0F;
-    lengthCounter = lengthCounter == 0 ? 64 : lengthCounter;
+    if (lengthCounter == 0) {
+      lengthCounter = 64;
+    }
   }
 
   // Update the frequency timer based on the current frequency
   void updateFrequencyTimer() {
     frequencyTimer = (2048 - frequency) * 4;
+    if (frequencyTimer <= 0) frequencyTimer = 1; // Prevent negative values
   }
 
   // Update method called every CPU cycle
   void tick(int cycles) {
     if (!enabled) return;
 
-    // Frequency timer
-    frequencyTimer -= cycles;
-    while (frequencyTimer <= 0) {
-      frequencyTimer += (2048 - frequency) * 4;
-      waveformIndex = (waveformIndex + 1) % 8;
+    // Frequency timer - more precise timing
+    for (int i = 0; i < cycles; i++) {
+      frequencyTimer--;
+      if (frequencyTimer <= 0) {
+        frequencyTimer = (2048 - frequency) * 4;
+        waveformIndex = (waveformIndex + 1) % 8;
+      }
     }
   }
 
@@ -126,7 +131,7 @@ class Channel2 {
 
   // Update envelope (called by frame sequencer)
   void updateEnvelope() {
-    if (envelopePeriod > 0) {
+    if (envelopePeriod > 0 && enabled) {
       envelopeTimer--;
       if (envelopeTimer <= 0) {
         envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
