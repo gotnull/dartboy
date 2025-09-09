@@ -175,7 +175,7 @@ class Emulator {
     Configuration.debugInstructions = wasDebug;
   }
 
-  /// Run the emulation at full speed.
+  /// Run the emulation at full speed with stable 60 FPS.
   void run() async {
     if (state != EmulatorState.ready) {
       print("Emulator not ready, cannot run.");
@@ -186,55 +186,68 @@ class Emulator {
 
     state = EmulatorState.running;
 
-    int frequency = CPU.frequency;
-
-    // FPS target
-    fps = 60; // Standard for most emulators
-    double periodFPS = 1e6 / fps; // Time per frame in microseconds
-
-    // Track cycles
+    // FPS target and timing
+    const int targetFPS = 60;
+    const int frameTimeMicros = 16667; // 1000000 / 60 microseconds per frame
+    
+    // Track performance
     cycles = 0;
-    int frameCycles = frequency ~/ fps; // Cycles per frame for 60fps
     int frameCounter = 0;
-
-    // Use a stopwatch to measure actual FPS
-    Stopwatch stopwatch = Stopwatch()..start();
-    Stopwatch frameStopwatch = Stopwatch()..start();
+    int totalCyclesExecuted = 0;
+    
+    // Use a stopwatch to measure actual FPS and timing
+    Stopwatch perfStopwatch = Stopwatch()..start();
+    Stopwatch frameTimer = Stopwatch()..start();
+    int nextFrameTime = frameTimeMicros;
 
     loop() async {
       while (state == EmulatorState.running) {
-        frameStopwatch.reset();
+        int frameStartTime = frameTimer.elapsedMicroseconds;
+        
         try {
           // Execute CPU steps for one frame
           while (!cpu!.ppu.frameReady) {
-            cpu!.cycle();
+            int cyclesUsed = cpu!.cycle();
+            cycles += cyclesUsed;
+            totalCyclesExecuted += cyclesUsed;
           }
           cpu!.ppu.resetFrameReady();
 
-          // Calculate speed and FPS
+          // Calculate performance statistics
           frameCounter++;
-          if (stopwatch.elapsedMilliseconds >= 1000) {
-            double elapsedSeconds = stopwatch.elapsedMicroseconds / 1e6;
-            speed = (cycles / elapsedSeconds).toInt(); // CPU speed in Hz
-            fps = (frameCounter / elapsedSeconds).round(); // Actual frames per second
+          if (perfStopwatch.elapsedMilliseconds >= 1000) {
+            double elapsedSeconds = perfStopwatch.elapsedMicroseconds / 1e6;
+            speed = (totalCyclesExecuted / elapsedSeconds).toInt();
+            fps = (frameCounter / elapsedSeconds).round();
 
-            stopwatch.reset();
+            perfStopwatch.reset();
             frameCounter = 0;
-            cycles = 0;
+            totalCyclesExecuted = 0;
           }
 
-          // Wait for the next frame
-          int elapsedMicroseconds = frameStopwatch.elapsedMicroseconds;
-          int delayMicroseconds = periodFPS.toInt() - elapsedMicroseconds;
-          if (delayMicroseconds > 0) {
-            await Future.delayed(Duration(microseconds: delayMicroseconds));
+          // Frame rate limiting - maintain stable 60 FPS
+          int frameEndTime = frameTimer.elapsedMicroseconds;
+          int timeUntilNextFrame = nextFrameTime - frameEndTime;
+          
+          if (timeUntilNextFrame > 0 && timeUntilNextFrame < frameTimeMicros * 2) {
+            // Delay to maintain 60 FPS, but not if we're too far behind
+            await Future.delayed(Duration(microseconds: timeUntilNextFrame));
           }
+          
+          // Schedule next frame, accounting for any lag
+          nextFrameTime += frameTimeMicros;
+          int currentTime = frameTimer.elapsedMicroseconds;
+          if (nextFrameTime < currentTime) {
+            // We're running behind, catch up gradually
+            nextFrameTime = currentTime + (frameTimeMicros ~/ 4);
+          }
+          
         } catch (e, s) {
           Debugger().getLogs().forEach((log) => print(log));
           print(e);
           print(s);
           state = EmulatorState.ready;
-          throw e;
+          rethrow;
         }
       }
     }

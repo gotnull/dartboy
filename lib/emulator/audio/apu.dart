@@ -382,8 +382,8 @@ class APU {
     if (accumulatedCycles >= cyclesPerSample) {
       int samplesToGenerate = accumulatedCycles ~/ cyclesPerSample;
       if (samplesToGenerate > 0) {
-        // Limit to prevent audio buffer overflow
-        samplesToGenerate = samplesToGenerate.clamp(1, 8);
+        // Limit to prevent audio buffer overflow and reduce processing load
+        samplesToGenerate = samplesToGenerate.clamp(1, 4);
         for (int i = 0; i < samplesToGenerate; i++) {
           mixAndQueueAudioSample();
         }
@@ -509,6 +509,7 @@ class APU {
   static final ByteData _audioByteData = _audioBuffer.buffer.asByteData();
   static Pointer<Uint8>? _audioBufferPtr;
   static int _queueSizeCheckCounter = 0;
+  static int _skipSamplesCounter = 0;
 
   void queueAudioSample(int leftSample, int rightSample) {
     // Initialize buffer pointer once
