@@ -29,12 +29,12 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/window_manager/macos
 
 SPEC CHECKSUMS:
-  desktop_window: fb7c4f12c1129f947ac482296b6f14059d57a3c3
-  FlutterMacOS: 8f6f14fa908a6fb3fba0cd85dbd81ec4b251fb24
-  gamepads_darwin: 07af6c60c282902b66574c800e20b2b26e68fda8
-  screen_retriever: 59634572a57080243dd1bf715e55b6c54f241a38
-  window_manager: 3a1844359a6295ab1e47659b1a777e36773cd6e8
+  desktop_window: de6acd6053564bdccd9f4b9473d25bf4f2ad9bdf
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  gamepads_darwin: 643b6a69e20ca678fae83781b7f7fc8f15f5d710
+  screen_retriever: 4f97c103641aab8ce183fa5af3b87029df167936
+  window_manager: 1d01fa7ac65a6e6f83b965471b1a7fdd3f06166c
 
-PODFILE CHECKSUM: cdfdc28f65ebbca1d863bf3e3abc1b284c963703
+PODFILE CHECKSUM: 765154378d052970609585c498853f306b1d60b3
 
-COCOAPODS: 1.15.2
+COCOAPODS: 1.16.2

@@ -1,3 +1,4 @@
+import 'package:dartboy/emulator/debugger.dart';
 import 'dart:convert';
 
 import 'package:dartboy/emulator/audio/apu.dart';
@@ -151,39 +152,37 @@ class CPU {
 
   /// Read a unsiged byte value from memory.
   int getUnsignedByte(int address) {
-    tick(4);
+    // Debugger().addLog('getUnsignedByte: ${address.toRadixString(16)}');
     return mmu.readByte(address) & 0xFF;
   }
 
   /// Read a byte from memory and update the clock count.
   int getSignedByte(int address) {
-    tick(4);
     return (mmu.readByte(address) & 0xFF).toSigned(8);
   }
 
   int popByteSP() {
-    int value = mmu.readByte(sp);
+    int value = getUnsignedByte(sp);
     sp = (sp + 1) & 0xFFFF; // SP increments after reading a byte
     return value;
   }
 
   /// Write a byte into memory (takes 4 clocks)
   void setByte(int address, int value) {
-    tick(4);
     mmu.writeByte(address, value);
   }
 
   /// Push word into the temporary stack and update the stack pointer
   void pushWordSP(int value) {
     sp -= 2;
-    mmu.writeByte(sp, value & 0xFF);
-    mmu.writeByte(sp + 1, (value >> 8) & 0xFF);
+    setByte(sp, value & 0xFF);
+    setByte(sp + 1, (value >> 8) & 0xFF);
   }
 
   int popWordSP() {
-    int lo = mmu.readByte(sp);
+    int lo = getUnsignedByte(sp);
     sp = (sp + 1) & 0xFFFF;
-    int hi = mmu.readByte(sp);
+    int hi = getUnsignedByte(sp);
     sp = (sp + 1) & 0xFFFF;
     return (hi << 8) | lo;
   }
@@ -374,8 +373,9 @@ class CPU {
     int cycle = 0;
 
     bool isCBPrefix = op == 0xCB;
-    String opcodeKey =
-        '0x${(isCBPrefix ? (op & 0xFF) : op).toRadixString(16).toUpperCase().padLeft(2, '0')}';
+    String opcodeKey = isCBPrefix
+        ? '0x${(op & 0xFF).toRadixString(16).toUpperCase().padLeft(2, '0')}'
+        : '0x${op.toRadixString(16).toUpperCase().padLeft(2, '0')}';
 
     Map<String, dynamic>? opcodeDetails;
 
@@ -398,11 +398,11 @@ class CPU {
   }
 
   int executeInstruction(int op) {
-    // Get the correct cycle count for the opcode
-    int cyclesForOp = checkCycleCount(op);
+    int cyclesForOp = 0;
 
     switch (op) {
       case 0x00:
+        cyclesForOp = checkCycleCount(op);
         Instructions.nop(this);
         break;
       case 0xC4:
@@ -410,15 +410,17 @@ class CPU {
       case 0xD4:
       case 0xDC:
         bool conditionMet = Instructions.callccnn(this, op);
-        cyclesForOp = checkCycleCount(op, conditionMet);
+        cyclesForOp = checkCycleCount(op, !conditionMet);
         break;
       case 0xCD:
+        cyclesForOp = checkCycleCount(op);
         Instructions.callnn(this);
         break;
       case 0x01:
       case 0x11:
       case 0x21:
       case 0x31:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldddnn(this, op);
         break;
       case 0x06:
@@ -429,90 +431,117 @@ class CPU {
       case 0x2E:
       case 0x36:
       case 0x3E:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldrn(this, op);
         break;
       case 0x0A:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldabc(this);
         break;
       case 0x1A:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldade(this);
         break;
       case 0x02:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldcba(this);
         break;
       case 0x12:
+        cyclesForOp = checkCycleCount(op);
         Instructions.lddea(this);
         break;
       case 0xF2:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldac(this);
         break;
       case 0xE8:
+        cyclesForOp = checkCycleCount(op);
         Instructions.addspn(this);
         break;
       case 0x37:
+        cyclesForOp = checkCycleCount(op);
         Instructions.scf(this);
         break;
       case 0x3F:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ccf(this);
         break;
       case 0x3A:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldan(this);
         break;
       case 0xEA:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldnna(this);
         break;
       case 0xF8:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldhlspn(this);
         break;
       case 0x2F:
+        cyclesForOp = checkCycleCount(op);
         Instructions.cpl(this);
         break;
       case 0xE0:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldffna(this);
         break;
       case 0xE2:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldhffca(this);
         break;
       case 0xFA:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldann(this);
         break;
       case 0x2A:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldahli(this);
         break;
       case 0x22:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldhlia(this);
         break;
       case 0x32:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldhlda(this);
         break;
       case 0x10:
+        cyclesForOp = checkCycleCount(op);
         Instructions.stop(this);
         break;
       case 0xF9:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldsphl(this);
         break;
       case 0xC5:
       case 0xD5:
       case 0xE5:
       case 0xF5:
+        cyclesForOp = checkCycleCount(op);
         Instructions.pushrr(this, op);
         break;
       case 0xC1:
       case 0xD1:
       case 0xE1:
       case 0xF1:
+        cyclesForOp = checkCycleCount(op);
         Instructions.poprr(this, op);
         break;
       case 0x08:
+        cyclesForOp = checkCycleCount(op);
         Instructions.lda16sp(this);
         break;
       case 0xD9:
+        cyclesForOp = checkCycleCount(op);
         Instructions.reti(this);
         break;
       case 0xC3:
+        cyclesForOp = checkCycleCount(op);
         Instructions.jpnn(this);
         break;
       case 0x07:
+        cyclesForOp = checkCycleCount(op);
         Instructions.rlca(this);
         break;
       case 0x3C:
@@ -523,6 +552,7 @@ class CPU {
       case 0x24:
       case 0x34:
       case 0x2C:
+        cyclesForOp = checkCycleCount(op);
         Instructions.incr(this, op);
         break;
       case 0x3D:
@@ -533,12 +563,14 @@ class CPU {
       case 0x25:
       case 0x2D:
       case 0x35:
+        cyclesForOp = checkCycleCount(op);
         Instructions.decr(this, op);
         break;
       case 0x03:
       case 0x13:
       case 0x23:
       case 0x33:
+        cyclesForOp = checkCycleCount(op);
         Instructions.incrr(this, op);
         break;
       case 0xB8:
@@ -549,24 +581,30 @@ class CPU {
       case 0xBD:
       case 0xBE:
       case 0xBF:
+        cyclesForOp = checkCycleCount(op);
         Instructions.cprr(this, op);
         break;
       case 0xFE:
+        cyclesForOp = checkCycleCount(op);
         Instructions.cpn(this);
         break;
       case 0x09:
       case 0x19:
       case 0x29:
       case 0x39:
+        cyclesForOp = checkCycleCount(op);
         Instructions.addhlrr(this, op);
         break;
       case 0xE9:
+        cyclesForOp = checkCycleCount(op);
         Instructions.jphl(this);
         break;
       case 0xDE:
+        cyclesForOp = checkCycleCount(op);
         Instructions.sbcn(this);
         break;
       case 0xD6:
+        cyclesForOp = checkCycleCount(op);
         Instructions.subn(this);
         break;
       case 0x90:
@@ -577,9 +615,11 @@ class CPU {
       case 0x95:
       case 0x96:
       case 0x97:
+        cyclesForOp = checkCycleCount(op);
         Instructions.subr(this, op);
         break;
       case 0xC6:
+        cyclesForOp = checkCycleCount(op);
         Instructions.addn(this);
         break;
       case 0x87:
@@ -590,6 +630,7 @@ class CPU {
       case 0x84:
       case 0x85:
       case 0x86:
+        cyclesForOp = checkCycleCount(op);
         Instructions.addr(this, op);
         break;
       case 0x88:
@@ -600,6 +641,7 @@ class CPU {
       case 0x8E:
       case 0x8D:
       case 0x8F:
+        cyclesForOp = checkCycleCount(op);
         Instructions.adcr(this, op);
         break;
       case 0xA0:
@@ -610,6 +652,7 @@ class CPU {
       case 0xA5:
       case 0xA6:
       case 0xA7:
+        cyclesForOp = checkCycleCount(op);
         Instructions.andr(this, op);
         break;
       case 0xA8:
@@ -620,9 +663,11 @@ class CPU {
       case 0xAD:
       case 0xAE:
       case 0xAF:
+        cyclesForOp = checkCycleCount(op);
         Instructions.xorr(this, op);
         break;
       case 0xF6:
+        cyclesForOp = checkCycleCount(op);
         Instructions.orn(this);
         break;
       case 0xB0:
@@ -633,12 +678,15 @@ class CPU {
       case 0xB5:
       case 0xB6:
       case 0xB7:
+        cyclesForOp = checkCycleCount(op);
         Instructions.orr(this, op);
         break;
       case 0x18:
+        cyclesForOp = checkCycleCount(op);
         Instructions.jre(this);
         break;
       case 0x27:
+        cyclesForOp = checkCycleCount(op);
         Instructions.daa(this);
         break;
       case 0xCA:
@@ -646,19 +694,21 @@ class CPU {
       case 0xDA:
       case 0xD2:
         bool conditionMet = Instructions.jpcnn(this, op);
-        cyclesForOp = checkCycleCount(op, conditionMet);
+        cyclesForOp = checkCycleCount(op, !conditionMet);
         break;
       case 0x20:
       case 0x28:
       case 0x30:
       case 0x38:
         bool conditionMet = Instructions.jrce(this, op);
-        cyclesForOp = checkCycleCount(op, conditionMet);
+        cyclesForOp = checkCycleCount(op, !conditionMet);
         break;
       case 0xF0:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ldhffnn(this);
         break;
       case 0x76:
+        cyclesForOp = checkCycleCount(op);
         Instructions.halt(this);
         break;
       case 0xC0:
@@ -666,7 +716,7 @@ class CPU {
       case 0xD0:
       case 0xD8:
         bool conditionMet = Instructions.retc(this, op);
-        cyclesForOp = checkCycleCount(op, conditionMet);
+        cyclesForOp = checkCycleCount(op, !conditionMet);
         break;
       case 0xC7:
       case 0xCF:
@@ -676,24 +726,31 @@ class CPU {
       case 0xEF:
       case 0xF7:
       case 0xFF:
+        cyclesForOp = checkCycleCount(op);
         Instructions.rstp(this, op);
         break;
       case 0xF3:
+        cyclesForOp = checkCycleCount(op);
         Instructions.di(this);
         break;
       case 0xFB:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ei(this);
         break;
       case 0xE6:
+        cyclesForOp = checkCycleCount(op);
         Instructions.andn(this);
         break;
       case 0xEE:
+        cyclesForOp = checkCycleCount(op);
         Instructions.xorn(this);
         break;
       case 0xC9:
+        cyclesForOp = checkCycleCount(op);
         Instructions.ret(this);
         break;
       case 0xCE:
+        cyclesForOp = checkCycleCount(op);
         Instructions.adcn(this);
         break;
       case 0x98:
@@ -704,29 +761,35 @@ class CPU {
       case 0x9D:
       case 0x9E:
       case 0x9F:
+        cyclesForOp = checkCycleCount(op);
         Instructions.sbcr(this, op);
         break;
       case 0x0F:
+        cyclesForOp = checkCycleCount(op);
         Instructions.rrca(this);
         break;
       case 0x1F:
+        cyclesForOp = checkCycleCount(op);
         Instructions.rra(this);
         break;
       case 0x17:
+        cyclesForOp = checkCycleCount(op);
         Instructions.rla(this);
         break;
       case 0x0B:
       case 0x1B:
       case 0x2B:
       case 0x3B:
+        cyclesForOp = checkCycleCount(op);
         Instructions.decrr(this, op);
         break;
       case 0xCB:
-        Instructions.cbprefix(this);
+        cyclesForOp = Instructions.cbprefix(this);
         break;
       default:
         switch (op & 0xC0) {
           case 0x40:
+            cyclesForOp = checkCycleCount(op);
             Instructions.ldrr(this, op);
             break;
           default:

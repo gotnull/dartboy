@@ -57,7 +57,7 @@ class Channel4 {
   }
 
   // NR44: Counter/Consecutive; Initial
-  int readNR44() => nr44 | 0xBF; // Bits 6-7 are unused/read-only
+  int readNR44() => 0xFF; // Write-only register
   void writeNR44(int value) {
     bool wasLengthEnabled = lengthEnabled;
     nr44 = value;
@@ -68,8 +68,8 @@ class Channel4 {
     if (!wasLengthEnabled &&
         lengthEnabled &&
         lengthCounter == 0 &&
-        frameSequencer == 0) {
-      lengthCounter = 63;
+        frameSequencer % 2 != 0) {
+      lengthCounter = 64;
     }
   }
 

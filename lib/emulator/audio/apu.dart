@@ -163,6 +163,7 @@ class APU {
       } else {
         // Power on: retain the always-on bits (4-6) in NR52
         nr52 = (value & 0x80) | 0x70; // Bits 4-6 are always 1
+        frameSequencer = 0;
       }
       return;
     }
@@ -405,22 +406,25 @@ class APU {
     return [left, right];
   }
 
+  final int audioBufferSize = 1024 * 4; // 1024 samples, 2 channels, 2 bytes per sample
+  final Uint8List audioBuffer = Uint8List(1024 * 4);
+  int audioBufferIndex = 0;
+
   void queueAudioSample(int leftSample, int rightSample) {
-    // Prepare a buffer for the stereo sample (4 bytes: 2 bytes per channel)
-    final buffer = Uint8List(4);
-    final byteData = buffer.buffer.asByteData();
-    byteData.setInt16(0, leftSample, Endian.little);
-    byteData.setInt16(2, rightSample, Endian.little);
+    if (!isInitialized) return;
 
-    // Allocate memory and copy the buffer
-    final bufferPtr = malloc.allocate<Uint8>(4);
-    bufferPtr.asTypedList(4).setAll(0, buffer);
+    final byteData = audioBuffer.buffer.asByteData();
+    byteData.setInt16(audioBufferIndex, leftSample, Endian.little);
+    byteData.setInt16(audioBufferIndex + 2, rightSample, Endian.little);
+    audioBufferIndex += 4;
 
-    // Stream the audio
-    streamAudio(bufferPtr, 4);
-
-    // Free the allocated memory
-    malloc.free(bufferPtr);
+    if (audioBufferIndex >= audioBufferSize) {
+      final bufferPtr = malloc.allocate<Uint8>(audioBufferSize);
+      bufferPtr.asTypedList(audioBufferSize).setAll(0, audioBuffer);
+      streamAudio(bufferPtr, audioBufferSize);
+      malloc.free(bufferPtr);
+      audioBufferIndex = 0;
+    }
   }
 
   Future<void> stopAudio() async {

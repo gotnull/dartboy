@@ -54,7 +54,7 @@ class Channel3 {
   }
 
   // NR34: Frequency High and Control
-  int readNR34() => nr34 | 0xBF; // Bits 6-7 are unused/read-only
+  int readNR34() => 0xFF; // Write-only register
   void writeNR34(int value) {
     bool wasLengthEnabled = lengthEnabled;
     nr34 = value;
@@ -66,8 +66,8 @@ class Channel3 {
     if (!wasLengthEnabled &&
         lengthEnabled &&
         lengthCounter == 0 &&
-        frameSequencer == 0) {
-      lengthCounter = 255;
+        frameSequencer % 2 != 0) {
+      lengthCounter = 256;
     }
   }
 

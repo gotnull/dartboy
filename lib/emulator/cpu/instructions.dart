@@ -187,13 +187,13 @@ class Instructions {
     if (from == 6) {
       // Handle LD r, (HL)
       int hl = cpu.registers.getRegisterPairSP(Registers.hl);
-      int value = cpu.mmu.readByte(hl);
+      int value = cpu.getUnsignedByte(hl);
       cpu.registers.setRegister(to, value);
     } else if (to == 6) {
       // Handle LD (HL), r
       int hl = cpu.registers.getRegisterPairSP(Registers.hl);
       int value = cpu.registers.getRegister(from);
-      cpu.mmu.writeByte(hl, value);
+      cpu.setByte(hl, value);
     } else {
       // Handle LD r, r
       int value = cpu.registers.getRegister(from);
@@ -201,7 +201,7 @@ class Instructions {
     }
   }
 
-  static void cbprefix(CPU cpu) {
+  static int cbprefix(CPU cpu) {
     int op = cpu.getUnsignedByte(cpu.pc++);
     int reg = op & 0x7;
     int data = cpu.registers.getRegister(reg) & 0xFF;
@@ -393,12 +393,13 @@ class Instructions {
           "CB Prefix operation unknown 0x${op.toRadixString(16)}",
         );
     }
+    return cpu.checkCycleCount(op, true);
   }
 
   static void decrr(CPU cpu, int op) {
     int pair = (op >> 4) & 0x3;
     int o = cpu.registers.getRegisterPairSP(pair);
-    cpu.registers.setRegisterPairSP(pair, o - 1);
+    cpu.registers.setRegisterPairSP(pair, (o - 1) & 0xFFFF);
   }
 
   static void rla(CPU cpu) {
@@ -812,7 +813,7 @@ class Instructions {
   static void incrr(CPU cpu, int op) {
     int pair = (op >> 4) & 0x3;
     int o = cpu.registers.getRegisterPairSP(pair) & 0xFFFF;
-    cpu.registers.setRegisterPairSP(pair, o + 1);
+    cpu.registers.setRegisterPairSP(pair, (o + 1) & 0xFFFF);
   }
 
   static void decr(CPU cpu, int op) {
@@ -866,15 +867,14 @@ class Instructions {
 
   static void lda16sp(CPU cpu) {
     int pos = ((cpu.nextUnsignedBytePC()) | (cpu.nextUnsignedBytePC() << 8));
-    cpu.mmu.writeByte(pos + 1, (cpu.sp & MemoryAddresses.ioStart) >> 8);
-    cpu.mmu.writeByte(pos, (cpu.sp & 0x00FF));
+    cpu.setByte(pos + 1, (cpu.sp & MemoryAddresses.ioStart) >> 8);
+    cpu.setByte(pos, (cpu.sp & 0x00FF));
   }
 
   static void poprr(CPU cpu, int op) {
     int pair = (op >> 4) & 0x3;
-    int lo = cpu.popByteSP();
-    int hi = cpu.popByteSP();
-    cpu.registers.setRegisterPair(pair, hi, lo);
+    int value = cpu.popWordSP();
+    cpu.registers.setRegisterPair(pair, (value >> 8) & 0xFF, value & 0xFF);
   }
 
   static void pushrr(CPU cpu, int op) {

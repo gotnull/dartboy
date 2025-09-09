@@ -1,3 +1,4 @@
+import 'package:dartboy/emulator/debugger.dart';
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -191,8 +192,6 @@ class Emulator {
     fps = 60; // Standard for most emulators
     double periodFPS = 1e6 / fps; // Time per frame in microseconds
 
-    Duration period = Duration(microseconds: periodFPS.toInt());
-
     // Track cycles
     cycles = 0;
     int frameCycles = frequency ~/ fps; // Cycles per frame for 60fps
@@ -200,34 +199,43 @@ class Emulator {
 
     // Use a stopwatch to measure actual FPS
     Stopwatch stopwatch = Stopwatch()..start();
+    Stopwatch frameStopwatch = Stopwatch()..start();
 
     loop() async {
       while (state == EmulatorState.running) {
-        int cyclesThisFrame = 0;
+        frameStopwatch.reset();
+        try {
+          // Execute CPU steps for one frame
+          while (!cpu!.ppu.frameReady) {
+            cpu!.cycle();
+          }
+          cpu!.ppu.resetFrameReady();
 
-        // Execute CPU steps for one frame
-        while (cyclesThisFrame < frameCycles) {
-          int stepCycles = cpu?.cycle() ?? 4;
-          cyclesThisFrame += stepCycles;
+          // Calculate speed and FPS
+          frameCounter++;
+          if (stopwatch.elapsedMilliseconds >= 1000) {
+            double elapsedSeconds = stopwatch.elapsedMicroseconds / 1e6;
+            speed = (cycles / elapsedSeconds).toInt(); // CPU speed in Hz
+            fps = (frameCounter / elapsedSeconds).round(); // Actual frames per second
+
+            stopwatch.reset();
+            frameCounter = 0;
+            cycles = 0;
+          }
+
+          // Wait for the next frame
+          int elapsedMicroseconds = frameStopwatch.elapsedMicroseconds;
+          int delayMicroseconds = periodFPS.toInt() - elapsedMicroseconds;
+          if (delayMicroseconds > 0) {
+            await Future.delayed(Duration(microseconds: delayMicroseconds));
+          }
+        } catch (e, s) {
+          Debugger().getLogs().forEach((log) => print(log));
+          print(e);
+          print(s);
+          state = EmulatorState.ready;
+          throw e;
         }
-
-        cycles += cyclesThisFrame; // Update total cycles
-
-        // Calculate speed and FPS
-        frameCounter++;
-        if (frameCounter >= fps) {
-          frameCounter = 0;
-
-          // Time elapsed for one second
-          double elapsedSeconds = stopwatch.elapsedMicroseconds / 1e6;
-          speed = (cycles / elapsedSeconds).toInt(); // CPU speed in Hz
-          fps = (1 / elapsedSeconds).toInt(); // Actual frames per second
-
-          stopwatch.reset(); // Reset stopwatch for the next second
-        }
-
-        // Wait for the next frame
-        await Future.delayed(period);
       }
     }
 

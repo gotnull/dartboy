@@ -89,7 +89,7 @@ class Channel1 {
   }
 
   // NR14: Frequency High and Control
-  int readNR14() => nr14 | 0xBF; // Bits 6-7 are unused/read-only
+  int readNR14() => 0xFF; // Write-only register
   void writeNR14(int value) {
     bool wasLengthEnabled = lengthEnabled;
     nr14 = value;
@@ -102,8 +102,8 @@ class Channel1 {
     if (!wasLengthEnabled &&
         lengthEnabled &&
         lengthCounter == 0 &&
-        frameSequencer == 0) {
-      lengthCounter = 63;
+        frameSequencer % 2 != 0) {
+      lengthCounter = 64;
     }
   }
 

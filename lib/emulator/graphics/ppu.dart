@@ -70,6 +70,12 @@ class PPU {
   /// The last measured Emulator.cycle.
   int lastCoreCycle = 0;
 
+  bool frameReady = false;
+
+  void resetFrameReady() {
+    frameReady = false;
+  }
+
   PPU(this.cpu);
 
   /// Initializes all palette RAM to the default on Gameboy boot.
@@ -311,7 +317,8 @@ class PPU {
       }
 
       // V-Blank Interrupt
-      if (ly == 143) {
+      if (ly == 144) {
+        frameReady = true;
         // Trigger interrupts if the display is enabled
         if (displayEnabled) {
           // Trigger VBlank
