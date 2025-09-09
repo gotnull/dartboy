@@ -45,9 +45,9 @@ class APU {
   final int bufferSize = 1024;
   final int channels = 2;
 
-  int cyclesPerSample;
+  double cyclesPerSample;
   int cyclesPerFrameSequencer = 8192; // 4194304 / 512
-  int accumulatedCycles = 0;
+  double accumulatedCycles = 0.0;
   int frameSequencerCycles = 0;
   int frameSequencer = 0;
 
@@ -65,7 +65,7 @@ class APU {
   int nr51 = 0;
   int nr52 = 0x80; // Sound on by default
 
-  APU(clockSpeed) : cyclesPerSample = clockSpeed ~/ defaultSampleRate;
+  APU(clockSpeed) : cyclesPerSample = clockSpeed / defaultSampleRate;
 
   Future<void> init() async {
     int result = initAudio(sampleRate, channels, bufferSize);
@@ -278,7 +278,7 @@ class APU {
   }
 
   void updateClockSpeed(int newClockSpeed) {
-    cyclesPerSample = newClockSpeed ~/ sampleRate;
+    cyclesPerSample = newClockSpeed / sampleRate;
     // cyclesPerFrameSequencer remains at 8192, as per Game Boy hardware
   }
 
@@ -393,11 +393,13 @@ class APU {
     left = (left * leftVolume) ~/ 7; // leftVolume ranges from 0 to 7
     right = (right * rightVolume) ~/ 7;
 
-    // The Game Boy's DAC output ranges from -8 to +7
-    // To output 16-bit samples, we scale the value accordingly
-    // For example, scale -8 to -32768 and +7 to +32767
+    // Now convert the summed output (0-60) to the DAC range (-8 to +7).
+    left = (left ~/ 4) - 8;
+    right = (right ~/ 4) - 8;
 
-    // Scaling factor for 16-bit audio (from 4-bit Game Boy audio)
+    // Scaling factor for 16-bit audio (from -8 to +7 to -32768 to +32767)
+    // Max value 7 maps to 32767. Min value -8 maps to -32768.
+    // Scaling factor is 32767 / 7.
     const int scalingFactor = 32767 ~/ 7;
 
     left = (left * scalingFactor).clamp(-32768, 32767);

@@ -155,7 +155,7 @@ class Channel3 {
     }
 
     // Convert to signed value (-8 to +7)
-    outputLevel -= 8;
+    // outputLevel -= 8;
     return outputLevel;
   }
 

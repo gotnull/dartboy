@@ -208,8 +208,7 @@ class Channel1 {
   int getOutput() {
     if (!enabled || !dacEnabled) return 0;
     int dutyValue = dutyPatterns[dutyCycle][waveformIndex];
-    int sample = dutyValue == 0 ? -volume : volume;
-    return sample;
+    return dutyValue * volume;
   }
 
   // Reset the channel

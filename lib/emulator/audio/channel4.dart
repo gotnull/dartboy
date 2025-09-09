@@ -181,8 +181,7 @@ class Channel4 {
   int getOutput() {
     if (!enabled || !dacEnabled) return 0;
     int output = (~lfsr) & 1;
-    int sample = output == 0 ? -volume : volume;
-    return sample;
+    return output * volume;
   }
 
   // Reset the channel
