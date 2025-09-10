@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:dartboy/emulator/cpu/cpu.dart';
 import 'package:dartboy/emulator/emulator.dart';
 import 'package:dartboy/emulator/memory/gamepad.dart';
@@ -7,6 +8,7 @@ import 'package:dartboy/gui/lcd.dart';
 import 'package:dartboy/gui/modal.dart';
 import 'package:dartboy/gui/popup_sub_menu.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -213,6 +215,8 @@ class MainScreenState extends State<MainScreen> {
             _pressedKeys.contains(LogicalKeyboardKey.backspace);
   }
 
+  bool get _isMobile => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
+
   @override
   Widget build(BuildContext context) {
     final cpu = MainScreen.emulator.cpu;
@@ -224,432 +228,299 @@ class MainScreenState extends State<MainScreen> {
       onKeyEvent: _handleKeyEvent,
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: SizedBox(
+        body: SafeArea(
+          child: _isMobile ? _buildMobileLayout(cpu, registers) : _buildDesktopLayout(cpu, registers),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileLayout(CPU? cpu, dynamic registers) {
+    return Column(
+      children: [
+        // Game screen - takes most of the space
+        Expanded(
+          flex: 3,
+          child: Center(
+            child: Container(
+              margin: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white),
+              ),
+              child: const AspectRatio(
+                aspectRatio: 160 / 144, // Gameboy screen resolution
+                child: LCDWidget(key: Key("lcd")),
+              ),
+            ),
+          ),
+        ),
+        
+        // Virtual Game Boy buttons
+        _buildVirtualControls(),
+        
+        // Control buttons - compact row
+        Container(
+          padding: const EdgeInsets.all(8.0),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              // Left side: LCD display
-              Expanded(
-                flex: 3,
-                child: Center(
+              _buildCompactButton('Load', () => _loadFile()),
+              _buildCompactButton('Run', () => _runEmulator()),
+              _buildCompactButton('Pause', () => _pauseEmulator()),
+              _buildCompactButton('Reset', () => _resetEmulator()),
+            ],
+          ),
+        ),
+        
+        // Status info - minimal
+        Container(
+          padding: const EdgeInsets.all(8.0),
+          child: Text(
+            'FPS: ${MainScreen.emulator.fps.toStringAsFixed(1)} | Speed: ${MainScreen.emulator.speed}Hz',
+            style: const TextStyle(color: Colors.green, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDesktopLayout(CPU? cpu, dynamic registers) {
+    return Row(
+      children: [
+        // Left side: LCD display
+        Expanded(
+          flex: 3,
+          child: Center(
+            child: Container(
+              margin: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white),
+              ),
+              child: const AspectRatio(
+                aspectRatio: 160 / 144, // Gameboy screen resolution
+                child: LCDWidget(key: Key("lcd")),
+              ),
+            ),
+          ),
+        ),
+
+        // Right side: Debug controls and emulator info
+        Expanded(
+          flex: 2,
+          child: Container(
+            padding: const EdgeInsets.all(8.0),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.white),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('HUD', style: proggyTextStyle()),
+                const Padding(padding: EdgeInsets.symmetric(vertical: 4.0)),
+                
+                // Emulator controls
+                SizedBox(
+                  width: double.infinity,
                   child: Container(
-                    margin: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(8.0),
                     decoration: BoxDecoration(
                       border: Border.all(color: Colors.white),
                     ),
-                    child: const AspectRatio(
-                      aspectRatio: 160 / 144, // Gameboy screen resolution
-                      child: LCDWidget(key: Key("lcd")),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        MyRomMenu(onRomSelected: _onRomSelected),
+                        customButton(cpu: cpu, label: 'Load', onPressed: () => _loadFile()),
+                        customButton(cpu: cpu, label: 'Run', onPressed: () => _runEmulator()),
+                        customButton(cpu: cpu, label: 'Pause', onPressed: () => _pauseEmulator()),
+                        customButton(cpu: cpu, label: 'Reset', onPressed: () => _resetEmulator()),
+                      ],
                     ),
                   ),
                 ),
-              ),
-
-              // Right side: Debug controls and emulator info
-              Expanded(
-                flex: 2,
-                child: Container(
-                  padding: const EdgeInsets.all(
-                    8.0,
-                  ), // Add padding inside the border
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: Colors.white,
-                    ), // Set border color and thickness
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'HUD',
-                        style: proggyTextStyle(),
+                
+                const Padding(padding: EdgeInsets.symmetric(vertical: 4.0)),
+                
+                // Debug information
+                Expanded(
+                  flex: 1,
+                  child: Container(
+                    padding: const EdgeInsets.all(8.0),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.white),
+                    ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('cycles: ${MainScreen.emulator.cycles}', style: proggyTextStyle()),
+                          Text('speed: ${MainScreen.emulator.speed}Hz', style: proggyTextStyle()),
+                          Text('FPS: ${MainScreen.emulator.fps.toStringAsFixed(2)}', style: proggyTextStyle()),
+                          const Divider(color: Colors.grey),
+                          if (cpu != null && registers != null) ...[
+                            _buildRegisterInfo(cpu, registers),
+                          ] else
+                            Text('No register data available', style: proggyTextStyle(color: Colors.red)),
+                        ],
                       ),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 4.0),
-                      ),
-                      // Emulator controls (Load, Pause, Run, Reset)
-                      SizedBox(
-                        width: double.infinity,
-                        child: Container(
-                          padding: const EdgeInsets.all(
-                              8.0), // Add padding inside the border
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: Colors.white,
-                            ), // Set border color and thickness
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              MyRomMenu(onRomSelected: _onRomSelected),
-                              // dropdownButton(
-                              //   cpu: cpu,
-                              //   romMap: MainScreen.romMap,
-                              //   onChanged: (String? value) {
-                              //     _debugFile(value);
-                              //   },
-                              // ),
-                              customButton(
-                                cpu: cpu,
-                                label: 'Load',
-                                onPressed: () {
-                                  _loadFile();
-                                },
-                              ),
-                              customButton(
-                                cpu: cpu,
-                                label: 'Run',
-                                onPressed: () {
-                                  _runEmulator();
-                                },
-                              ),
-                              customButton(
-                                cpu: cpu,
-                                label: 'Pause',
-                                onPressed: () {
-                                  _pauseEmulator();
-                                },
-                              ),
-                              customButton(
-                                cpu: cpu,
-                                label: 'Reset',
-                                onPressed: () {
-                                  _resetEmulator();
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 4.0),
-                      ),
-                      // Debug information (FPS, cycles, speed, registers)
-                      Expanded(
-                        flex: 1,
-                        child: Container(
-                          padding: const EdgeInsets.all(
-                            8.0,
-                          ), // Add padding inside the border
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: Colors.white,
-                            ), // Set border color and thickness
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.start,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'cycles: ${MainScreen.emulator.cycles}',
-                                style: proggyTextStyle(),
-                              ),
-                              Text(
-                                'speed: ${MainScreen.emulator.speed}Hz',
-                                style: proggyTextStyle(),
-                              ),
-                              Text(
-                                'FPS: ${MainScreen.emulator.fps.toStringAsFixed(2)}',
-                                style: proggyTextStyle(),
-                              ),
-                              const Divider(color: Colors.grey),
-                              if (cpu != null && registers != null) ...[
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.start,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      flex: 1,
-                                      child: SizedBox(
-                                        width: double.infinity,
-                                        child: ColoredBox(
-                                          color: Colors.black,
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'PC ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    cpu.pc.toRadixString(16),
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'A ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    registers.a
-                                                        .toRadixString(16),
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'B ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    registers.b
-                                                        .toRadixString(16),
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'D ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    registers.d
-                                                        .toRadixString(16),
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'H ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    registers.h
-                                                        .toRadixString(16),
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'Z ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    '${registers.zeroFlagSet}',
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'H ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    '${registers.halfCarryFlagSet}',
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'IME ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    '${cpu.interruptsEnabled}',
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'IF ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    '${cpu.interruptsEnabled}',
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      flex: 1,
-                                      child: SizedBox(
-                                        width: double.infinity,
-                                        child: ColoredBox(
-                                          color: Colors.black,
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'SP ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    cpu.sp.toRadixString(16),
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'F ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    '${registers.f}',
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'C ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    '${registers.c}',
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'E ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    '${registers.e}',
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'L ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    '${registers.l}',
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'N ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    '${registers.subtractFlagSet}',
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'C ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    '${registers.carryFlagSet}',
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    'IE ',
-                                                    style: proggyTextStyle(),
-                                                  ),
-                                                  Text(
-                                                    '${registers.carryFlagSet}',
-                                                    style: proggyTextStyle(
-                                                      color: Colors.green,
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ] else
-                                Text(
-                                  'No register data available',
-                                  style: proggyTextStyle(
-                                    color: Colors.red,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVirtualControls() {
+    return Container(
+      padding: const EdgeInsets.all(16.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          // D-Pad
+          Column(
+            children: [
+              _buildGameButton('↑', () => _handleVirtualButton(Gamepad.up, true), 
+                             () => _handleVirtualButton(Gamepad.up, false)),
+              Row(
+                children: [
+                  _buildGameButton('←', () => _handleVirtualButton(Gamepad.left, true),
+                                 () => _handleVirtualButton(Gamepad.left, false)),
+                  const SizedBox(width: 60),
+                  _buildGameButton('→', () => _handleVirtualButton(Gamepad.right, true),
+                                 () => _handleVirtualButton(Gamepad.right, false)),
+                ],
+              ),
+              _buildGameButton('↓', () => _handleVirtualButton(Gamepad.down, true),
+                             () => _handleVirtualButton(Gamepad.down, false)),
+            ],
+          ),
+          
+          // Action buttons
+          Column(
+            children: [
+              const SizedBox(height: 40),
+              Row(
+                children: [
+                  _buildGameButton('B', () => _handleVirtualButton(Gamepad.B, true),
+                                 () => _handleVirtualButton(Gamepad.B, false)),
+                  const SizedBox(width: 20),
+                  _buildGameButton('A', () => _handleVirtualButton(Gamepad.A, true),
+                                 () => _handleVirtualButton(Gamepad.A, false)),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  _buildGameButton('Select', () => _handleVirtualButton(Gamepad.select, true),
+                                 () => _handleVirtualButton(Gamepad.select, false)),
+                  const SizedBox(width: 10),
+                  _buildGameButton('Start', () => _handleVirtualButton(Gamepad.start, true),
+                                 () => _handleVirtualButton(Gamepad.start, false)),
+                ],
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGameButton(String label, VoidCallback onPressed, VoidCallback onReleased) {
+    return GestureDetector(
+      onTapDown: (_) => onPressed(),
+      onTapUp: (_) => onReleased(),
+      onTapCancel: onReleased,
+      child: Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          color: Colors.grey[800],
+          border: Border.all(color: Colors.white),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildCompactButton(String label, VoidCallback onPressed) {
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.grey[800],
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        minimumSize: const Size(60, 30),
+      ),
+      child: Text(label, style: const TextStyle(fontSize: 12)),
+    );
+  }
+
+  Widget _buildRegisterInfo(CPU cpu, dynamic registers) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 1,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildRegisterRow('PC', cpu.pc.toRadixString(16)),
+              _buildRegisterRow('A', registers.a.toRadixString(16)),
+              _buildRegisterRow('B', registers.b.toRadixString(16)),
+              _buildRegisterRow('D', registers.d.toRadixString(16)),
+              _buildRegisterRow('H', registers.h.toRadixString(16)),
+              _buildRegisterRow('Z', '${registers.zeroFlagSet}'),
+              _buildRegisterRow('H', '${registers.halfCarryFlagSet}'),
+              _buildRegisterRow('IME', '${cpu.interruptsEnabled}'),
+              _buildRegisterRow('IF', '${cpu.interruptsEnabled}'),
+            ],
+          ),
+        ),
+        Expanded(
+          flex: 1,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildRegisterRow('SP', cpu.sp.toRadixString(16)),
+              _buildRegisterRow('F', '${registers.f}'),
+              _buildRegisterRow('C', '${registers.c}'),
+              _buildRegisterRow('E', '${registers.e}'),
+              _buildRegisterRow('L', '${registers.l}'),
+              _buildRegisterRow('N', '${registers.subtractFlagSet}'),
+              _buildRegisterRow('C', '${registers.carryFlagSet}'),
+              _buildRegisterRow('IE', '${registers.carryFlagSet}'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRegisterRow(String label, String value) {
+    return Row(
+      children: [
+        Text('$label ', style: proggyTextStyle()),
+        Text(value, style: proggyTextStyle(color: Colors.green)),
+      ],
+    );
+  }
+
+  void _handleVirtualButton(int button, bool pressed) {
+    final cpu = MainScreen.emulator.cpu;
+    if (cpu != null) {
+      cpu.buttons[button] = pressed;
+    }
   }
 }

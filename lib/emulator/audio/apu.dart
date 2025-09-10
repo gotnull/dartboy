@@ -1,5 +1,5 @@
 import 'dart:ffi';
-import 'dart:typed_data';
+import 'dart:io';
 
 import 'package:dartboy/emulator/audio/channel1.dart';
 import 'package:dartboy/emulator/audio/channel2.dart';
@@ -8,11 +8,17 @@ import 'package:dartboy/emulator/audio/channel4.dart';
 import 'package:dartboy/emulator/configuration.dart';
 import 'package:dartboy/emulator/memory/memory_registers.dart';
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
 
 // Load the shared library with proper path handling
-late final DynamicLibrary audioLib;
+late final DynamicLibrary? audioLib;
 
-DynamicLibrary _loadAudioLibrary() {
+DynamicLibrary? _loadAudioLibrary() {
+  // Skip audio library loading on mobile platforms
+  if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
+    return null;
+  }
+  
   try {
     // Try loading from the app bundle first (for production builds)
     return DynamicLibrary.open('libaudio.dylib');
@@ -29,8 +35,9 @@ DynamicLibrary _loadAudioLibrary() {
           // Try with full path to macos directory
           return DynamicLibrary.open('/Users/fulvio/development/dartboy/macos/libaudio.dylib');
         } catch (e) {
-          // Final fallback - throw descriptive error
-          throw Exception('Failed to load libaudio.dylib. Please ensure SDL2 is installed and the library is built correctly.');
+          // Final fallback - return null for graceful degradation
+          print('Warning: Failed to load libaudio.dylib. Audio will be disabled.');
+          return null;
         }
       }
     }
@@ -62,8 +69,11 @@ bool _audioLibInitialized = false;
 InitAudioDart? _initAudio;
 InitAudioDart get initAudio {
   _initializeAudioLib();
+  if (audioLib == null) {
+    return _initAudio ??= (int sampleRate, int channels, int bufferSize) => -1;
+  }
   try {
-    return _initAudio ??= audioLib.lookup<NativeFunction<InitAudioNative>>('init_audio').asFunction();
+    return _initAudio ??= audioLib!.lookup<NativeFunction<InitAudioNative>>('init_audio').asFunction();
   } catch (e) {
     // Return dummy function if audio library loading fails
     return _initAudio ??= (int sampleRate, int channels, int bufferSize) => -1;
@@ -73,8 +83,11 @@ InitAudioDart get initAudio {
 StreamAudioDart? _streamAudio;
 StreamAudioDart get streamAudio {
   _initializeAudioLib();
+  if (audioLib == null) {
+    return _streamAudio ??= (Pointer<Uint8> buffer, int length) {}; // Dummy function
+  }
   try {
-    return _streamAudio ??= audioLib.lookup<NativeFunction<StreamAudioNative>>('stream_audio').asFunction();
+    return _streamAudio ??= audioLib!.lookup<NativeFunction<StreamAudioNative>>('stream_audio').asFunction();
   } catch (e) {
     return _streamAudio ??= (Pointer<Uint8> buffer, int length) {}; // Dummy function
   }
@@ -83,8 +96,11 @@ StreamAudioDart get streamAudio {
 TerminateAudioDart? _terminateAudio;
 TerminateAudioDart get terminateAudio {
   _initializeAudioLib();
+  if (audioLib == null) {
+    return _terminateAudio ??= () {}; // Dummy function
+  }
   try {
-    return _terminateAudio ??= audioLib.lookup<NativeFunction<TerminateAudioNative>>('terminate_audio').asFunction();
+    return _terminateAudio ??= audioLib!.lookup<NativeFunction<TerminateAudioNative>>('terminate_audio').asFunction();
   } catch (e) {
     return _terminateAudio ??= () {}; // Dummy function
   }
@@ -100,8 +116,11 @@ typedef ClearQueuedAudioDart = void Function();
 GetQueuedAudioSizeDart? _getQueuedAudioSize;
 GetQueuedAudioSizeDart get getQueuedAudioSize {
   _initializeAudioLib();
+  if (audioLib == null) {
+    return _getQueuedAudioSize ??= () => 0; // Dummy function
+  }
   try {
-    return _getQueuedAudioSize ??= audioLib.lookup<NativeFunction<GetQueuedAudioSizeNative>>('get_queued_audio_size').asFunction();
+    return _getQueuedAudioSize ??= audioLib!.lookup<NativeFunction<GetQueuedAudioSizeNative>>('get_queued_audio_size').asFunction();
   } catch (e) {
     return _getQueuedAudioSize ??= () => 0; // Dummy function
   }
@@ -110,8 +129,11 @@ GetQueuedAudioSizeDart get getQueuedAudioSize {
 ClearQueuedAudioDart? _clearQueuedAudio;
 ClearQueuedAudioDart get clearQueuedAudio {
   _initializeAudioLib();
+  if (audioLib == null) {
+    return _clearQueuedAudio ??= () {}; // Dummy function
+  }
   try {
-    return _clearQueuedAudio ??= audioLib.lookup<NativeFunction<ClearQueuedAudioNative>>('clear_queued_audio').asFunction();
+    return _clearQueuedAudio ??= audioLib!.lookup<NativeFunction<ClearQueuedAudioNative>>('clear_queued_audio').asFunction();
   } catch (e) {
     return _clearQueuedAudio ??= () {}; // Dummy function
   }

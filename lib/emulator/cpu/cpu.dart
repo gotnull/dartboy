@@ -156,7 +156,6 @@ class CPU {
 
   /// Read a unsiged byte value from memory.
   int getUnsignedByte(int address) {
-    // Debugger().addLog('getUnsignedByte: ${address.toRadixString(16)}');
     return mmu.readByte(address) & 0xFF;
   }
 
@@ -303,7 +302,7 @@ class CPU {
 
     // Check if any interrupt is triggered and enabled
     int pendingInterrupts = triggeredInterrupts & enabledInterrupts;
-    
+
     if (pendingInterrupts != 0) {
       // If interrupts are enabled, handle the interrupt
       if (interruptsEnabled) {
@@ -317,10 +316,12 @@ class CPU {
         } else if ((pendingInterrupts & MemoryRegisters.lcdcBit) != 0) {
           pc = MemoryRegisters.lcdcHandlerAddress;
           triggeredInterrupts &= ~MemoryRegisters.lcdcBit;
-        } else if ((pendingInterrupts & MemoryRegisters.timerOverflowBit) != 0) {
+        } else if ((pendingInterrupts & MemoryRegisters.timerOverflowBit) !=
+            0) {
           pc = MemoryRegisters.timerOverflowHandlerAddress;
           triggeredInterrupts &= ~MemoryRegisters.timerOverflowBit;
-        } else if ((pendingInterrupts & MemoryRegisters.serialTransferBit) != 0) {
+        } else if ((pendingInterrupts & MemoryRegisters.serialTransferBit) !=
+            0) {
           pc = MemoryRegisters.serialTransferHandlerAddress;
           triggeredInterrupts &= ~MemoryRegisters.serialTransferBit;
         } else if ((pendingInterrupts & MemoryRegisters.hiloBit) != 0) {
@@ -350,7 +351,7 @@ class CPU {
     if (halted) {
       // Check for pending interrupts (enabled AND triggered)
       int pendingInterrupts = ie & ifr;
-      
+
       if (pendingInterrupts != 0) {
         // Exit halt if any interrupt is pending
         halted = false;
@@ -365,14 +366,14 @@ class CPU {
       return 20; // Interrupt handling takes 20 cycles (5 memory accesses * 4 cycles each)
     }
 
-    // Handle halt bug: PC increment is skipped for the opcode fetch only  
+    // Handle halt bug: PC increment is skipped for the opcode fetch only
     int op = getUnsignedByte(pc);
     if (!haltBugTriggered) {
       pc++;
     } else {
       haltBugTriggered = false; // Reset after affecting one opcode fetch
     }
-    
+
     int cyclesUsed = executeInstruction(op);
 
     return cyclesUsed;
@@ -380,16 +381,18 @@ class CPU {
 
   int checkCBCycleCount(int op) {
     int cycle = 0;
-    String opcodeKey = '0x${op.toRadixString(16).toUpperCase().padLeft(2, '0')}';
-    Map<String, dynamic>? opcodeDetails = loadedOpcodes['cbprefixed']?[opcodeKey];
-    
+    String opcodeKey =
+        '0x${op.toRadixString(16).toUpperCase().padLeft(2, '0')}';
+    Map<String, dynamic>? opcodeDetails =
+        loadedOpcodes['cbprefixed']?[opcodeKey];
+
     if (opcodeDetails != null) {
       List<int> expectedCycles = List<int>.from(opcodeDetails['cycles']);
       cycle = expectedCycles[0];
     } else {
       print('CB Opcode $opcodeKey not found in opcodes.json');
     }
-    
+
     return cycle;
   }
 

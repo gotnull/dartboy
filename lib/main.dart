@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import 'gui/main_screen.dart';
@@ -5,14 +7,16 @@ import 'gui/main_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize the window manager
-  await windowManager.ensureInitialized();
-
-  // Set the minimum window size before running the app
-  await setWindowSize();
-
-  // Set the window title
-  windowManager.setTitle('Dart Boy');
+  // Only initialize window manager on desktop platforms
+  if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+    try {
+      await windowManager.ensureInitialized();
+      await setWindowSize();
+      await windowManager.setTitle('Dart Boy');
+    } catch (e) {
+      print('Window manager not available on this platform: $e');
+    }
+  }
 
   runApp(const DartBoy());
 }

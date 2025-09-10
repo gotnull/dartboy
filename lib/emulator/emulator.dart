@@ -187,14 +187,13 @@ class Emulator {
     state = EmulatorState.running;
 
     // FPS target and timing
-    const int targetFPS = 60;
     const int frameTimeMicros = 16667; // 1000000 / 60 microseconds per frame
-    
+
     // Track performance
     cycles = 0;
     int frameCounter = 0;
     int totalCyclesExecuted = 0;
-    
+
     // Use a stopwatch to measure actual FPS and timing
     Stopwatch perfStopwatch = Stopwatch()..start();
     Stopwatch frameTimer = Stopwatch()..start();
@@ -202,8 +201,6 @@ class Emulator {
 
     loop() async {
       while (state == EmulatorState.running) {
-        int frameStartTime = frameTimer.elapsedMicroseconds;
-        
         try {
           // Execute CPU steps for one frame
           while (!cpu!.ppu.frameReady) {
@@ -228,12 +225,13 @@ class Emulator {
           // Frame rate limiting - maintain stable 60 FPS
           int frameEndTime = frameTimer.elapsedMicroseconds;
           int timeUntilNextFrame = nextFrameTime - frameEndTime;
-          
-          if (timeUntilNextFrame > 0 && timeUntilNextFrame < frameTimeMicros * 2) {
+
+          if (timeUntilNextFrame > 0 &&
+              timeUntilNextFrame < frameTimeMicros * 2) {
             // Delay to maintain 60 FPS, but not if we're too far behind
             await Future.delayed(Duration(microseconds: timeUntilNextFrame));
           }
-          
+
           // Schedule next frame, accounting for any lag
           nextFrameTime += frameTimeMicros;
           int currentTime = frameTimer.elapsedMicroseconds;
@@ -241,7 +239,6 @@ class Emulator {
             // We're running behind, catch up gradually
             nextFrameTime = currentTime + (frameTimeMicros ~/ 4);
           }
-          
         } catch (e, s) {
           Debugger().getLogs().forEach((log) => print(log));
           print(e);

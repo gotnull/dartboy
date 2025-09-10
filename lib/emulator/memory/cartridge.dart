@@ -77,6 +77,10 @@ class Cartridge {
     romType = readByte(0x148);
     ramType = readByte(0x149);
     superGameboy = readByte(0x146) == 0x3;
+    
+    print("Loaded cartridge: $name");
+    print("Cartridge type: $type (0x${type.toRadixString(16)})");
+    print("ROM type: $romType, RAM type: $ramType");
 
     int headerValue = readByte(0x143);
     if (headerValue == 0xC0) {
@@ -147,8 +151,9 @@ class Cartridge {
       return MBC5(cpu);
     }
 
-    // If none of the cases match, throw an exception
-    throw Exception("Unsupported cartridge type: $type");
+    // If none of the cases match, fall back to basic MMU and print warning
+    print("Warning: Unsupported cartridge type: $type (0x${type.toRadixString(16)}). Using basic MMU.");
+    return MMU(cpu);
   }
 
   /// Checks if the cartridge has a internal battery to keep the RAM state.
