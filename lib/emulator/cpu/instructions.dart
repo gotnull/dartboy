@@ -1,6 +1,7 @@
 import 'package:dartboy/emulator/cpu/cpu.dart';
 import 'package:dartboy/emulator/cpu/registers.dart';
 import 'package:dartboy/emulator/memory/memory_addresses.dart';
+import 'package:dartboy/emulator/memory/memory_registers.dart';
 
 /// Class to handle instruction implementation, instructions run on top of the CPU object.
 ///
@@ -393,7 +394,7 @@ class Instructions {
           "CB Prefix operation unknown 0x${op.toRadixString(16)}",
         );
     }
-    return cpu.checkCycleCount(op, true);
+    return cpu.checkCBCycleCount(op);
   }
 
   static void decrr(CPU cpu, int op) {
@@ -543,6 +544,15 @@ class Instructions {
 
   static void halt(CPU cpu) {
     cpu.halted = true;
+    // Check for halt bug condition at the time of HALT execution
+    if (!cpu.interruptsEnabled) {
+      int ie = cpu.mmu.readRegisterByte(MemoryRegisters.enabledInterrupts);
+      int ifr = cpu.mmu.readRegisterByte(MemoryRegisters.triggeredInterrupts);
+      if ((ie & ifr) != 0) {
+        cpu.haltBugTriggered = true;
+        cpu.halted = false; // Exit halt immediately due to bug
+      }
+    }
   }
 
   static void ldhffnn(CPU cpu) {

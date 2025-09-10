@@ -1,4 +1,3 @@
-import 'package:dartboy/emulator/debugger.dart';
 import 'dart:convert';
 
 import 'package:dartboy/emulator/audio/apu.dart';
@@ -43,6 +42,9 @@ class CPU {
   bool interruptsEnabled;
 
   bool enableInterruptsNextCycle;
+
+  /// Halt bug flag - when true, PC increment is skipped for next instruction
+  bool haltBugTriggered = false;
 
   /// The current CPU clock cycle since the beginning of the emulation.
   int clocks = 0;
@@ -102,6 +104,7 @@ class CPU {
       : halted = false,
         interruptsEnabled = false,
         enableInterruptsNextCycle = false,
+        haltBugTriggered = false,
         doubleSpeed = false {
     mmu = cartridge.createController(this);
     ppu = PPU(this);
@@ -127,6 +130,7 @@ class CPU {
 
     halted = false;
     interruptsEnabled = false;
+    haltBugTriggered = false;
 
     clocks = 0;
     cyclesSinceLastSleep = 0;
@@ -289,11 +293,6 @@ class CPU {
 
   /// Fires interrupts if interrupts are enabled.
   bool fireInterrupts() {
-    // If interrupts are disabled (via the DI instruction), ignore this call
-    if (!interruptsEnabled) {
-      return false;
-    }
-
     int triggeredInterrupts = mmu.readRegisterByte(
       MemoryRegisters.triggeredInterrupts,
     );
@@ -302,35 +301,40 @@ class CPU {
       MemoryRegisters.enabledInterrupts,
     );
 
-    if ((triggeredInterrupts & enabledInterrupts) != 0) {
-      pushWordSP(pc);
-      interruptsEnabled = false;
+    // Check if any interrupt is triggered and enabled
+    int pendingInterrupts = triggeredInterrupts & enabledInterrupts;
+    
+    if (pendingInterrupts != 0) {
+      // If interrupts are enabled, handle the interrupt
+      if (interruptsEnabled) {
+        pushWordSP(pc);
+        interruptsEnabled = false;
 
-      if ((triggeredInterrupts & MemoryRegisters.vblankBit) != 0) {
-        pc = MemoryRegisters.vblankHandlerAddress;
-        triggeredInterrupts &= ~MemoryRegisters.vblankBit;
-      } else if ((triggeredInterrupts & MemoryRegisters.lcdcBit) != 0) {
-        pc = MemoryRegisters.lcdcHandlerAddress;
-        triggeredInterrupts &= ~MemoryRegisters.lcdcBit;
-      } else if ((triggeredInterrupts & MemoryRegisters.timerOverflowBit) !=
-          0) {
-        pc = MemoryRegisters.timerOverflowHandlerAddress;
-        triggeredInterrupts &= ~MemoryRegisters.timerOverflowBit;
-      } else if ((triggeredInterrupts & MemoryRegisters.serialTransferBit) !=
-          0) {
-        pc = MemoryRegisters.serialTransferHandlerAddress;
-        triggeredInterrupts &= ~MemoryRegisters.serialTransferBit;
-      } else if ((triggeredInterrupts & MemoryRegisters.hiloBit) != 0) {
-        pc = MemoryRegisters.hiloHandlerAddress;
-        triggeredInterrupts &= ~MemoryRegisters.hiloBit;
+        // Handle interrupts in priority order
+        if ((pendingInterrupts & MemoryRegisters.vblankBit) != 0) {
+          pc = MemoryRegisters.vblankHandlerAddress;
+          triggeredInterrupts &= ~MemoryRegisters.vblankBit;
+        } else if ((pendingInterrupts & MemoryRegisters.lcdcBit) != 0) {
+          pc = MemoryRegisters.lcdcHandlerAddress;
+          triggeredInterrupts &= ~MemoryRegisters.lcdcBit;
+        } else if ((pendingInterrupts & MemoryRegisters.timerOverflowBit) != 0) {
+          pc = MemoryRegisters.timerOverflowHandlerAddress;
+          triggeredInterrupts &= ~MemoryRegisters.timerOverflowBit;
+        } else if ((pendingInterrupts & MemoryRegisters.serialTransferBit) != 0) {
+          pc = MemoryRegisters.serialTransferHandlerAddress;
+          triggeredInterrupts &= ~MemoryRegisters.serialTransferBit;
+        } else if ((pendingInterrupts & MemoryRegisters.hiloBit) != 0) {
+          pc = MemoryRegisters.hiloHandlerAddress;
+          triggeredInterrupts &= ~MemoryRegisters.hiloBit;
+        }
+
+        mmu.writeRegisterByte(
+          MemoryRegisters.triggeredInterrupts,
+          triggeredInterrupts,
+        );
+
+        return true;
       }
-
-      mmu.writeRegisterByte(
-        MemoryRegisters.triggeredInterrupts,
-        triggeredInterrupts,
-      );
-
-      return true;
     }
 
     return false;
@@ -344,29 +348,49 @@ class CPU {
     int ifr = mmu.readRegisterByte(MemoryRegisters.triggeredInterrupts);
 
     if (halted) {
-      if ((ie & ifr) != 0) {
-        // Exit halt if any interrupt is enabled and triggered
+      // Check for pending interrupts (enabled AND triggered)
+      int pendingInterrupts = ie & ifr;
+      
+      if (pendingInterrupts != 0) {
+        // Exit halt if any interrupt is pending
         halted = false;
       } else {
-        // The halt bug: if IME is disabled and no interrupts are enabled but a halt was executed,
-        // the CPU should still execute the next instruction
-        if (!interruptsEnabled && ie == 0 && ifr == 0) {
-          halted = false; // Clear halted for halt bug emulation
-        } else {
-          tick(4); // Maintain halt if no halt bug condition
-          return 0;
-        }
+        // No interrupts pending, stay halted
+        tick(4); // Consume 4 cycles while halted
+        return 4;
       }
     }
 
     if (interruptsEnabled && fireInterrupts()) {
-      return 0;
+      return 20; // Interrupt handling takes 20 cycles (5 memory accesses * 4 cycles each)
     }
 
-    int op = nextUnsignedBytePC();
+    // Handle halt bug: PC increment is skipped for the opcode fetch only  
+    int op = getUnsignedByte(pc);
+    if (!haltBugTriggered) {
+      pc++;
+    } else {
+      haltBugTriggered = false; // Reset after affecting one opcode fetch
+    }
+    
     int cyclesUsed = executeInstruction(op);
 
     return cyclesUsed;
+  }
+
+  int checkCBCycleCount(int op) {
+    int cycle = 0;
+    String opcodeKey = '0x${op.toRadixString(16).toUpperCase().padLeft(2, '0')}';
+    Map<String, dynamic>? opcodeDetails = loadedOpcodes['cbprefixed']?[opcodeKey];
+    
+    if (opcodeDetails != null) {
+      List<int> expectedCycles = List<int>.from(opcodeDetails['cycles']);
+      cycle = expectedCycles[0];
+    } else {
+      print('CB Opcode $opcodeKey not found in opcodes.json');
+    }
+    
+    return cycle;
   }
 
   int checkCycleCount(int op, [bool condition = false]) {
