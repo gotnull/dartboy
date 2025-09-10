@@ -8,7 +8,6 @@ import 'package:dartboy/emulator/gamepad_map.dart';
 import 'package:dartboy/emulator/memory/cartridge.dart';
 import 'package:dartboy/emulator/memory/gamepad.dart';
 import 'package:gamepads/gamepads.dart';
-import 'package:window_manager/window_manager.dart';
 
 /// Represents the state of the emulator.
 ///
@@ -148,9 +147,8 @@ class Emulator {
       "Manufacturer Code: ${cpu?.cartridge.cartManufacturerCode.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}",
     );
 
-    windowManager.setTitle(
-      'Dart Boy: ${cpu?.cartridge.name}',
-    );
+    // Note: Window title management removed for cross-platform compatibility
+    // Title would be: 'Dart Boy: ${cpu?.cartridge.name}'
 
     cpu?.apu.init();
   }

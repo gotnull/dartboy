@@ -8,7 +8,6 @@ import 'package:dartboy/emulator/memory/cartridge.dart';
 import 'package:dartboy/emulator/memory/memory_registers.dart';
 import 'package:dartboy/emulator/memory/mmu/mmu.dart';
 import 'package:flutter/services.dart';
-import 'package:window_manager/window_manager.dart';
 
 /// CPU class is responsible for the instruction execution, interrupts, and timing of the system.
 ///
@@ -141,7 +140,7 @@ class CPU {
     mmu.reset();
     apu.reset();
 
-    windowManager.setTitle('Dart Boy');
+    // Note: Window title management removed for cross-platform compatibility
   }
 
   /// Read the next program byte and update the PC value
