@@ -5,6 +5,7 @@ import 'package:dartboy/emulator/audio/channel1.dart';
 import 'package:dartboy/emulator/audio/channel2.dart';
 import 'package:dartboy/emulator/audio/channel3.dart';
 import 'package:dartboy/emulator/audio/channel4.dart';
+import 'package:dartboy/emulator/audio/mobile_audio.dart';
 import 'package:dartboy/emulator/configuration.dart';
 import 'package:dartboy/emulator/memory/memory_registers.dart';
 import 'package:ffi/ffi.dart';
@@ -168,15 +169,29 @@ class APU {
   int nr50 = 0;
   int nr51 = 0;
   int nr52 = 0x80; // Sound on by default
+  
+  // Mobile audio system
+  MobileAudio? _mobileAudio;
+  bool get _isMobile => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
-  APU(clockSpeed) : cyclesPerSample = clockSpeed ~/ defaultSampleRate;
+  APU(clockSpeed) : cyclesPerSample = clockSpeed ~/ defaultSampleRate {
+    if (_isMobile) {
+      _mobileAudio = MobileAudio();
+    }
+  }
 
   Future<void> init() async {
-    int result = initAudio(sampleRate, channels, bufferSize);
-    if (result != 0) {
-      // Handle initialization error if necessary
+    if (_isMobile) {
+      await _mobileAudio?.init();
+      await _mobileAudio?.startAudio();
+      isInitialized = Configuration.enableAudio;
+    } else {
+      int result = initAudio(sampleRate, channels, bufferSize);
+      if (result != 0) {
+        // Handle initialization error if necessary
+      }
+      isInitialized = Configuration.enableAudio;
     }
-    isInitialized = Configuration.enableAudio;
   }
 
   // Update left and right channel volumes based on NR50 register
@@ -480,8 +495,49 @@ class APU {
     int leftSample = samples[0];
     int rightSample = samples[1];
 
-    // Queue the stereo audio sample
-    queueAudioSample(leftSample, rightSample);
+    if (_isMobile) {
+      // Update mobile audio with channel states
+      _updateMobileAudio();
+    } else {
+      // Queue the stereo audio sample for desktop
+      queueAudioSample(leftSample, rightSample);
+    }
+  }
+
+  void _updateMobileAudio() {
+    if (_mobileAudio == null) return;
+    
+    // Update mobile audio with channel parameters
+    _mobileAudio!.setChannelEnabled(1, channel1.enabled);
+    _mobileAudio!.setChannelEnabled(2, channel2.enabled);  
+    _mobileAudio!.setChannelEnabled(3, channel3.enabled);
+    _mobileAudio!.setChannelEnabled(4, channel4.enabled);
+    
+    // Set frequencies (convert from Game Boy frequency to Hz)
+    if (channel1.enabled) {
+      double freq = 131072.0 / (2048 - channel1.frequency);
+      _mobileAudio!.setChannelFrequency(1, freq);
+      _mobileAudio!.setChannelVolume(1, channel1.volume / 15.0);
+      _mobileAudio!.setChannelDuty(1, channel1.dutyCycle);
+    }
+    
+    if (channel2.enabled) {
+      double freq = 131072.0 / (2048 - channel2.frequency);
+      _mobileAudio!.setChannelFrequency(2, freq);
+      _mobileAudio!.setChannelVolume(2, channel2.volume / 15.0);
+      _mobileAudio!.setChannelDuty(2, channel2.dutyCycle);
+    }
+    
+    if (channel3.enabled) {
+      double freq = 131072.0 / (2048 - channel3.frequency);
+      _mobileAudio!.setChannelFrequency(3, freq);
+      _mobileAudio!.setChannelVolume(3, channel3.enabled ? 0.5 : 0.0);
+      _mobileAudio!.setWaveformRAM(channel3.waveformRAM);
+    }
+    
+    if (channel4.enabled) {
+      _mobileAudio!.setChannelVolume(4, channel4.volume / 15.0);
+    }
   }
 
   // High-pass filter state for DC blocking
