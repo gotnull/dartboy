@@ -101,8 +101,71 @@ class MainScreenState extends State<MainScreen> {
     }
   }
 
-  Future<void> _loadTetrisDX() async {
-    await _debugFile("assets/roms/tetris_world_dx.gbc");
+
+  // Popular ROMs for easy access
+  static const Map<String, String> popularRoms = {
+    'Tetris DX': 'assets/roms/tetris_world_dx.gbc',
+    'Tetris (Classic)': 'assets/roms/tetris.gb',
+    'Dr. Mario': 'assets/roms/drmario.gb',
+    'Kirby\'s Dream Land': 'assets/roms/kirbys_dreamland.gb',
+    'Pokemon Gold': 'assets/roms/pokemon_gold.gbc',
+    'Pokemon Yellow': 'assets/roms/pokemon_yellow.gbc',
+    'Zelda: Link\'s Awakening': 'assets/roms/legend_of_zelda_links_awakening.gbc',
+    'Zelda (GBC)': 'assets/roms/zelda.gbc',
+    'Metal Gear Solid': 'assets/roms/Metal Gear Solid (USA).gbc',
+    'Donkey Kong Country': 'assets/roms/donkey_kong_country.gbc',
+    'Dragon Warrior Monsters': 'assets/roms/dragon_warrior_monsters.gbc',
+    'Super Mario Bros Deluxe': 'assets/roms/smb_deluxe.gbc',
+  };
+
+  void _showRomSelection() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.grey[900],
+      builder: (BuildContext context) {
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.7,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              const Text(
+                'Select ROM',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: popularRoms.length,
+                  itemBuilder: (context, index) {
+                    String romName = popularRoms.keys.elementAt(index);
+                    String romPath = popularRoms.values.elementAt(index);
+                    return Card(
+                      color: Colors.grey[800],
+                      child: ListTile(
+                        title: Text(
+                          romName,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        leading: const Icon(Icons.videogame_asset, color: Colors.green),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _debugFile(romPath);
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _loadFile() async {
@@ -277,7 +340,7 @@ class MainScreenState extends State<MainScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              _buildCompactButton('Debug: Tetris DX', () => _loadTetrisDX()),
+              _buildCompactButton('ROM List', () => _showRomSelection()),
             ],
           ),
         ),
@@ -349,7 +412,7 @@ class MainScreenState extends State<MainScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        customButton(cpu: cpu, label: 'Debug: Tetris DX', onPressed: () => _loadTetrisDX()),
+                        customButton(cpu: cpu, label: 'ROM List', onPressed: () => _showRomSelection()),
                       ],
                     ),
                   ),
