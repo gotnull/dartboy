@@ -101,7 +101,6 @@ class MainScreenState extends State<MainScreen> {
     }
   }
 
-
   // Popular ROMs for easy access
   static const Map<String, String> popularRoms = {
     'Tetris DX': 'assets/roms/tetris_world_dx.gbc',
@@ -109,8 +108,11 @@ class MainScreenState extends State<MainScreen> {
     'Dr. Mario': 'assets/roms/drmario.gb',
     'Kirby\'s Dream Land': 'assets/roms/kirbys_dreamland.gb',
     'Pokemon Gold': 'assets/roms/pokemon_gold.gbc',
+    'RodLand': 'assets/roms/Rodland (Europe).gb',
+    'Robocop': 'assets/roms/Robocop (U) (M6) [C][!].gbc',
     'Pokemon Yellow': 'assets/roms/pokemon_yellow.gbc',
-    'Zelda: Link\'s Awakening': 'assets/roms/legend_of_zelda_links_awakening.gbc',
+    'Zelda: Link\'s Awakening':
+        'assets/roms/legend_of_zelda_links_awakening.gbc',
     'Zelda (GBC)': 'assets/roms/zelda.gbc',
     'Metal Gear Solid': 'assets/roms/Metal Gear Solid (USA).gbc',
     'Donkey Kong Country': 'assets/roms/donkey_kong_country.gbc',
@@ -151,7 +153,8 @@ class MainScreenState extends State<MainScreen> {
                           romName,
                           style: const TextStyle(color: Colors.white),
                         ),
-                        leading: const Icon(Icons.videogame_asset, color: Colors.green),
+                        leading: const Icon(Icons.videogame_asset,
+                            color: Colors.green),
                         onTap: () {
                           Navigator.pop(context);
                           _debugFile(romPath);
@@ -296,7 +299,9 @@ class MainScreenState extends State<MainScreen> {
       child: Scaffold(
         backgroundColor: Colors.black,
         body: SafeArea(
-          child: _isMobile ? _buildMobileLayout(cpu, registers) : _buildDesktopLayout(cpu, registers),
+          child: _isMobile
+              ? _buildMobileLayout(cpu, registers)
+              : _buildDesktopLayout(cpu, registers),
         ),
       ),
     );
@@ -321,10 +326,10 @@ class MainScreenState extends State<MainScreen> {
             ),
           ),
         ),
-        
+
         // Virtual Game Boy buttons
         _buildVirtualControls(),
-        
+
         // Control buttons - compact row
         Container(
           padding: const EdgeInsets.all(8.0),
@@ -344,7 +349,7 @@ class MainScreenState extends State<MainScreen> {
             ],
           ),
         ),
-        
+
         // Status info - minimal
         Container(
           padding: const EdgeInsets.all(8.0),
@@ -390,7 +395,7 @@ class MainScreenState extends State<MainScreen> {
               children: [
                 Text('HUD', style: proggyTextStyle()),
                 const Padding(padding: EdgeInsets.symmetric(vertical: 4.0)),
-                
+
                 // Emulator controls
                 SizedBox(
                   width: double.infinity,
@@ -405,21 +410,36 @@ class MainScreenState extends State<MainScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             MyRomMenu(onRomSelected: _onRomSelected),
-                            customButton(cpu: cpu, label: 'Load', onPressed: () => _loadFile()),
-                            customButton(cpu: cpu, label: 'Run', onPressed: () => _runEmulator()),
-                            customButton(cpu: cpu, label: 'Pause', onPressed: () => _pauseEmulator()),
-                            customButton(cpu: cpu, label: 'Reset', onPressed: () => _resetEmulator()),
+                            customButton(
+                                cpu: cpu,
+                                label: 'Load',
+                                onPressed: () => _loadFile()),
+                            customButton(
+                                cpu: cpu,
+                                label: 'Run',
+                                onPressed: () => _runEmulator()),
+                            customButton(
+                                cpu: cpu,
+                                label: 'Pause',
+                                onPressed: () => _pauseEmulator()),
+                            customButton(
+                                cpu: cpu,
+                                label: 'Reset',
+                                onPressed: () => _resetEmulator()),
                           ],
                         ),
                         const SizedBox(height: 8),
-                        customButton(cpu: cpu, label: 'ROM List', onPressed: () => _showRomSelection()),
+                        customButton(
+                            cpu: cpu,
+                            label: 'ROM List',
+                            onPressed: () => _showRomSelection()),
                       ],
                     ),
                   ),
                 ),
-                
+
                 const Padding(padding: EdgeInsets.symmetric(vertical: 4.0)),
-                
+
                 // Debug information
                 Expanded(
                   flex: 1,
@@ -433,14 +453,19 @@ class MainScreenState extends State<MainScreen> {
                         mainAxisAlignment: MainAxisAlignment.start,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('cycles: ${MainScreen.emulator.cycles}', style: proggyTextStyle()),
-                          Text('speed: ${MainScreen.emulator.speed}Hz', style: proggyTextStyle()),
-                          Text('FPS: ${MainScreen.emulator.fps.toStringAsFixed(2)}', style: proggyTextStyle()),
+                          Text('cycles: ${MainScreen.emulator.cycles}',
+                              style: proggyTextStyle()),
+                          Text('speed: ${MainScreen.emulator.speed}Hz',
+                              style: proggyTextStyle()),
+                          Text(
+                              'FPS: ${MainScreen.emulator.fps.toStringAsFixed(2)}',
+                              style: proggyTextStyle()),
                           const Divider(color: Colors.grey),
                           if (cpu != null && registers != null) ...[
                             _buildRegisterInfo(cpu, registers),
                           ] else
-                            Text('No register data available', style: proggyTextStyle(color: Colors.red)),
+                            Text('No register data available',
+                                style: proggyTextStyle(color: Colors.red)),
                         ],
                       ),
                     ),
@@ -463,43 +488,59 @@ class MainScreenState extends State<MainScreen> {
           // D-Pad
           Column(
             children: [
-              _buildGameButton('↑', () => _handleVirtualButton(Gamepad.up, true), 
-                             () => _handleVirtualButton(Gamepad.up, false)),
+              _buildGameButton(
+                  '↑',
+                  () => _handleVirtualButton(Gamepad.up, true),
+                  () => _handleVirtualButton(Gamepad.up, false)),
               Row(
                 children: [
-                  _buildGameButton('←', () => _handleVirtualButton(Gamepad.left, true),
-                                 () => _handleVirtualButton(Gamepad.left, false)),
+                  _buildGameButton(
+                      '←',
+                      () => _handleVirtualButton(Gamepad.left, true),
+                      () => _handleVirtualButton(Gamepad.left, false)),
                   const SizedBox(width: 60),
-                  _buildGameButton('→', () => _handleVirtualButton(Gamepad.right, true),
-                                 () => _handleVirtualButton(Gamepad.right, false)),
+                  _buildGameButton(
+                      '→',
+                      () => _handleVirtualButton(Gamepad.right, true),
+                      () => _handleVirtualButton(Gamepad.right, false)),
                 ],
               ),
-              _buildGameButton('↓', () => _handleVirtualButton(Gamepad.down, true),
-                             () => _handleVirtualButton(Gamepad.down, false)),
+              _buildGameButton(
+                  '↓',
+                  () => _handleVirtualButton(Gamepad.down, true),
+                  () => _handleVirtualButton(Gamepad.down, false)),
             ],
           ),
-          
+
           // Action buttons
           Column(
             children: [
               const SizedBox(height: 40),
               Row(
                 children: [
-                  _buildGameButton('B', () => _handleVirtualButton(Gamepad.B, true),
-                                 () => _handleVirtualButton(Gamepad.B, false)),
+                  _buildGameButton(
+                      'B',
+                      () => _handleVirtualButton(Gamepad.B, true),
+                      () => _handleVirtualButton(Gamepad.B, false)),
                   const SizedBox(width: 20),
-                  _buildGameButton('A', () => _handleVirtualButton(Gamepad.A, true),
-                                 () => _handleVirtualButton(Gamepad.A, false)),
+                  _buildGameButton(
+                      'A',
+                      () => _handleVirtualButton(Gamepad.A, true),
+                      () => _handleVirtualButton(Gamepad.A, false)),
                 ],
               ),
               const SizedBox(height: 20),
               Row(
                 children: [
-                  _buildGameButton('Select', () => _handleVirtualButton(Gamepad.select, true),
-                                 () => _handleVirtualButton(Gamepad.select, false)),
+                  _buildGameButton(
+                      'Select',
+                      () => _handleVirtualButton(Gamepad.select, true),
+                      () => _handleVirtualButton(Gamepad.select, false)),
                   const SizedBox(width: 10),
-                  _buildGameButton('Start', () => _handleVirtualButton(Gamepad.start, true),
-                                 () => _handleVirtualButton(Gamepad.start, false)),
+                  _buildGameButton(
+                      'Start',
+                      () => _handleVirtualButton(Gamepad.start, true),
+                      () => _handleVirtualButton(Gamepad.start, false)),
                 ],
               ),
             ],
@@ -509,7 +550,8 @@ class MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildGameButton(String label, VoidCallback onPressed, VoidCallback onReleased) {
+  Widget _buildGameButton(
+      String label, VoidCallback onPressed, VoidCallback onReleased) {
     return GestureDetector(
       onTapDown: (_) => onPressed(),
       onTapUp: (_) => onReleased(),
@@ -525,7 +567,8 @@ class MainScreenState extends State<MainScreen> {
         child: Center(
           child: Text(
             label,
-            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+                color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
           ),
         ),
       ),

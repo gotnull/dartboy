@@ -6,44 +6,41 @@ class Channel1 {
   int nr13 = 0; // Frequency low (NR13)
   int nr14 = 0; // Frequency high + Control (NR14)
 
-  // Internal variables
+  // Internal state
   int frequency = 0; // Current frequency (11 bits)
-  int frequencyTimer = 0; // Frequency timer
-  int waveformIndex = 0; // Current position in waveform (0-7)
-  int sweepTimer = 0; // Timer for the frequency sweep
-  int envelopeTimer = 0; // Timer for the volume envelope
-  int lengthCounter = 0; // Length counter
+  int frequencyTimer = 0; // Frequency timer (counts down in CPU cycles)
+  int dutyStep = 0; // Current duty step position (0-7)
   int volume = 0; // Current volume (0-15)
+  int lengthCounter = 0; // Length counter (0-64)
 
-  // Sweep variables
-  bool sweepEnabled = false;
-  bool sweepNegate =
-      false; // Sweep direction (false for increase, true for decrease)
-  int sweepPeriod = 0;
-  int sweepShift = 0;
-  int shadowFrequency = 0;
+  // Sweep state
+  int sweepTimer = 0; // Sweep timer
+  int sweepPeriod = 0; // Sweep period (0-7)
+  int sweepShift = 0; // Sweep shift amount (0-7)
+  bool sweepNegate = false; // Sweep direction (false=increase, true=decrease)
+  bool sweepEnabled = false; // Internal sweep enable flag
+  int shadowFrequency = 0; // Shadow frequency for sweep calculations
 
-  // Envelope variables
-  bool envelopeIncrease = false; // Envelope direction (true for increase)
-  int envelopePeriod = 0;
+  // Envelope state
+  int envelopeTimer = 0; // Envelope timer
+  int envelopePeriod = 0; // Envelope period (0-7)
+  bool envelopeIncrease = false; // Envelope direction
 
-  // Length counter enabled flag
-  bool lengthEnabled = false;
+  // Control flags
+  bool enabled = false; // Channel enabled flag
+  bool dacEnabled = false; // DAC enabled (NR12 bits 3-7 not all zero)
+  bool lengthEnabled = false; // Length counter enabled
 
-  // Channel enabled flag
-  bool enabled = false;
-
-  // Duty cycle variables
-  int dutyCycle = 0; // Duty cycle index (0-3)
+  // Duty cycle patterns (Pan Docs specification)
   static const List<List<int>> dutyPatterns = [
-    [0, 1, 0, 0, 0, 0, 0, 0], // 12.5%
-    [0, 1, 1, 0, 0, 0, 0, 0], // 25%
-    [0, 1, 1, 1, 1, 0, 0, 0], // 50%
-    [1, 0, 0, 0, 0, 1, 1, 1], // 75%
+    [0, 0, 0, 0, 0, 0, 0, 1], // 12.5% (one high bit)
+    [1, 0, 0, 0, 0, 0, 0, 1], // 25% (two high bits)
+    [1, 0, 0, 0, 0, 1, 1, 1], // 50% (four high bits)
+    [0, 1, 1, 1, 1, 1, 1, 0], // 75% (six high bits - inverted 25%)
   ];
 
-  // DAC enabled flag (determined by NR12)
-  bool dacEnabled = false;
+  // Duty cycle index (0-3)
+  int dutyCycle = 0;
 
   // Constructor
   Channel1();
@@ -114,48 +111,74 @@ class Channel1 {
   }
 
   // Trigger the channel (on write to NR14 with bit 7 set)
+  // Pan Docs: "Triggering a sound restarts it from the beginning"
   void trigger() {
+    // Channel is enabled only if DAC is enabled
     enabled = dacEnabled;
-    frequencyTimer = (2048 - frequency) * 4;
-    waveformIndex = 0;
-    envelopeTimer = envelopePeriod;
-    volume = (nr12 >> 4) & 0x0F;
-    
-    // Length counter reloading
-    if (lengthCounter == 0) {
-      lengthCounter = 64;
-      // If length is enabled and frame sequencer is about to clock length, subtract 1
-      if (lengthEnabled && (frameSequencer & 1) == 0) {
-        lengthCounter = 63;
+
+
+    if (enabled) {
+      // Reset frequency timer with initial period
+      frequencyTimer = 4 * (2048 - frequency);
+
+      // Pan Docs: "duty step is reset to 0" (starts outputting low)
+      dutyStep = 0;
+
+      // Reset envelope
+      envelopeTimer = envelopePeriod;
+      volume = (nr12 >> 4) & 0x0F; // Initial volume from NR12 bits 4-7
+
+      // Length counter handling
+      if (lengthCounter == 0) {
+        lengthCounter = 64; // Full length
+        // Extra clocking if frame sequencer is about to clock length
+        if (lengthEnabled && (frameSequencer & 1) == 0) {
+          lengthCounter--;
+          if (lengthCounter == 0) {
+            enabled = false;
+          }
+        }
       }
-    }
-    
-    // Sweep trigger behavior
-    shadowFrequency = frequency;
-    sweepTimer = sweepPeriod > 0 ? sweepPeriod : 8;
-    sweepEnabled = sweepPeriod != 0 || sweepShift != 0;
-    if (sweepShift != 0) {
-      calculateSweepFrequency();
+
+      // Sweep initialization
+      shadowFrequency = frequency;
+      sweepTimer = sweepPeriod > 0 ? sweepPeriod : 8;
+      sweepEnabled = (sweepPeriod != 0) || (sweepShift != 0);
+
+      // Initial frequency calculation and overflow check
+      if (sweepShift != 0) {
+        int newFreq = calculateSweepFrequency();
+        if (newFreq > 2047) {
+          enabled = false; // Disable if overflow
+        }
+      }
     }
   }
 
   // Update the frequency timer based on the current frequency
   void updateFrequencyTimer() {
     frequencyTimer = (2048 - frequency) * 4;
-    if (frequencyTimer <= 0) frequencyTimer = 1; // Prevent negative values
+    if (frequencyTimer <= 0) frequencyTimer = 4; // Ensure minimum period
   }
 
-  // Update method called every CPU cycle - optimized for performance
+  // Update method called every CPU cycle - cycle accurate per Pan Docs
   void tick(int cycles) {
     if (!enabled) return;
 
-    // Frequency timer - optimized batch processing
+    // Frequency timer decrements every CPU cycle
+    // Period = 4 * (2048 - frequency) CPU cycles
+    // Duty step advances when timer reaches 0
     frequencyTimer -= cycles;
     while (frequencyTimer <= 0) {
-      int period = (2048 - frequency) * 4;
-      if (period <= 0) period = 1;
+      // Calculate the reload period
+      int period = 4 * (2048 - frequency);
+      if (period <= 0) period = 4; // Minimum period to prevent locks
+
+      // Reload timer
       frequencyTimer += period;
-      waveformIndex = (waveformIndex + 1) % 8;
+
+      // Advance duty step (Pan Docs: "duty step counter advances")
+      dutyStep = (dutyStep + 1) % 8;
     }
   }
 
@@ -222,37 +245,53 @@ class Channel1 {
   }
 
   // Get the output sample for the current state
+  // Returns digital value (0-15) that will be converted by DAC
   int getOutput() {
+    // If channel or DAC is disabled, output 0
     if (!enabled || !dacEnabled) return 0;
-    int dutyValue = dutyPatterns[dutyCycle][waveformIndex];
-    int sample = dutyValue == 0 ? -volume : volume;
-    return sample;
+
+    // Get current duty pattern bit
+    int dutyBit = dutyPatterns[dutyCycle][dutyStep];
+
+    // Output volume when duty is high, 0 when low
+    // This produces the correct square wave with proper amplitude
+    return dutyBit == 1 ? volume : 0;
   }
 
   // Reset the channel
   void reset() {
+    // Reset all registers
     nr10 = 0;
     nr11 = 0;
     nr12 = 0;
     nr13 = 0;
     nr14 = 0;
+
+    // Reset internal state
     frequency = 0;
     frequencyTimer = 0;
-    waveformIndex = 0;
-    sweepTimer = 0;
-    envelopeTimer = 0;
-    lengthCounter = 0;
+    dutyStep = 0;
     volume = 0;
-    enabled = false;
-    dacEnabled = false;
-    sweepEnabled = false;
-    lengthEnabled = false;
-    envelopeIncrease = false;
-    sweepNegate = false;
+    lengthCounter = 0;
+
+    // Reset sweep state
+    sweepTimer = 0;
     sweepPeriod = 0;
     sweepShift = 0;
+    sweepNegate = false;
+    sweepEnabled = false;
     shadowFrequency = 0;
+
+    // Reset envelope state
+    envelopeTimer = 0;
     envelopePeriod = 0;
+    envelopeIncrease = false;
+
+    // Reset control flags
+    enabled = false;
+    dacEnabled = false;
+    lengthEnabled = false;
+    dutyCycle = 0;
   }
 
   // Frame sequencer reference (needs to be set from Audio class)

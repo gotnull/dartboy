@@ -161,6 +161,14 @@ class MyRomMenuState extends State<MyRomMenu> {
       displayName: "Games",
       subItems: [
         RomItem(
+          displayName: "Robocop",
+          romPath: "assets/roms/Robocop (U) (M6) [C][!].gbc",
+        ),
+        RomItem(
+          displayName: "Rod Land",
+          romPath: "assets/roms/Rodland (Europe).gb",
+        ),
+        RomItem(
           displayName: "Metal Gear Solid",
           romPath: "assets/roms/Metal Gear Solid (USA).gbc",
         ),

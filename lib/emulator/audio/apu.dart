@@ -158,16 +158,18 @@ ClearQueuedAudioDart get clearQueuedAudio {
 
 class APU {
   static const int frameSequencerRate = 512; // Hz
-  static const int defaultSampleRate = 32768; // Authentic Game Boy rate (CPU/128)
+  static const int defaultSampleRate = 44100; // SDL output rate
+  static const int internalSampleRate = 32768; // Game Boy internal rate (CPU/128)
   static const int defaultBufferSize = 1024;
   static const int defaultChannels = 2;
+  static const double cpuFrequency = 4194304.0; // Game Boy CPU frequency
 
-  final int sampleRate = 32768; // Much closer to original Game Boy
+  final int sampleRate = 44100; // SDL output rate
   final int bufferSize = 1024;
   final int channels = 2;
 
   int cyclesPerSample;
-  int cyclesPerFrameSequencer = 8192; // 4194304 / 512
+  static const int cyclesPerFrameSequencer = 8192; // 4194304 / 512 = exact timing
   int accumulatedCycles = 0;
   int frameSequencerCycles = 0;
   int frameSequencer = 0;
@@ -413,7 +415,7 @@ class APU {
     }
 
     // If channel is on, return the current sample being played
-    int sampleOffset = channel3.waveformIndex >> 1;
+    int sampleOffset = channel3.sampleIndex >> 1;
     return channel3.waveformRAM[sampleOffset];
   }
 
@@ -423,14 +425,14 @@ class APU {
       channel3.waveformRAM[addr - MemoryRegisters.waveRamStart] = data;
     } else {
       // If the channel is on, write to the current sample offset
-      int sampleOffset = channel3.waveformIndex >> 1;
+      int sampleOffset = channel3.sampleIndex >> 1;
       channel3.waveformRAM[sampleOffset] = data;
     }
     return data;
   }
 
   void updateClockSpeed(int newClockSpeed) {
-    cyclesPerSample = newClockSpeed ~/ sampleRate;
+    cyclesPerSample = newClockSpeed ~/ defaultSampleRate;
     // cyclesPerFrameSequencer remains at 8192, as per Game Boy hardware
   }
 
@@ -452,52 +454,61 @@ class APU {
       frameSequencerCycles -= cyclesPerFrameSequencer;
     }
 
-    // Generate audio samples at the correct intervals (optimized for mobile)
-    if (accumulatedCycles >= cyclesPerSample) {
-      int samplesToGenerate = accumulatedCycles ~/ cyclesPerSample;
-      if (samplesToGenerate > 0) {
-        // Limit to prevent audio buffer overflow and reduce processing load
-        samplesToGenerate = samplesToGenerate.clamp(1, 2); // Reduce max samples per tick
-        for (int i = 0; i < samplesToGenerate; i++) {
-          mixAndQueueAudioSample();
-        }
-        accumulatedCycles -= samplesToGenerate * cyclesPerSample;
-      }
+    // Generate audio samples at exact intervals for cycle accuracy
+    while (accumulatedCycles >= cyclesPerSample) {
+      mixAndQueueAudioSample();
+      accumulatedCycles -= cyclesPerSample;
     }
   }
 
   void updateFrameSequencer() {
-    // Update frame sequencer step
-    frameSequencer = (frameSequencer + 1) % 8;
-
-    // Set the frame sequencer value in Channel1
+    // Set the frame sequencer value in all channels BEFORE updating
     channel1.setFrameSequencer(frameSequencer);
     channel2.setFrameSequencer(frameSequencer);
     channel3.setFrameSequencer(frameSequencer);
     channel4.setFrameSequencer(frameSequencer);
 
+    // Authentic Game Boy frame sequencer (8-step cycle):
+    // Step   Length Ctr  Vol Env     Sweep
+    // 0      Clock       -           -
+    // 1      -           -           -
+    // 2      Clock       -           Clock
+    // 3      -           -           -
+    // 4      Clock       -           -
+    // 5      -           -           -
+    // 6      Clock       -           Clock
+    // 7      -           Clock       -
     switch (frameSequencer) {
-      case 0:
-      case 2:
-      case 4:
-      case 6:
+      case 0: // Step 0: Length counter only
         updateLengthCounters();
-        if (frameSequencer == 2 || frameSequencer == 6) channel1.updateSweep();
         break;
-      case 1:
-        // Step 1: Nothing
+      case 1: // Step 1: Nothing
         break;
-      case 3:
-        // Step 3: Nothing
+      case 2: // Step 2: Length counter and sweep
+        updateLengthCounters();
+        channel1.updateSweep();
         break;
-      case 5:
-        // Step 5: Nothing
+      case 3: // Step 3: Nothing
         break;
-      case 7:
-        // Step 7: Envelopes
+      case 4: // Step 4: Length counter only
+        updateLengthCounters();
+        break;
+      case 5: // Step 5: Nothing
+        break;
+      case 6: // Step 6: Length counter and sweep
+        updateLengthCounters();
+        channel1.updateSweep();
+        break;
+      case 7: // Step 7: Volume envelope only
         updateEnvelopes();
         break;
     }
+
+    // Update frame sequencer step AFTER processing
+    frameSequencer = (frameSequencer + 1) % 8;
+
+    // Update NR52 channel status bits
+    updateNR52ChannelStatus();
   }
 
   void updateLengthCounters() {
@@ -551,55 +562,78 @@ class APU {
   // High-pass filter state for DC blocking
   double _leftHighPassState = 0.0;
   double _rightHighPassState = 0.0;
+  double _lastLeftSample = 0.0;
+  double _lastRightSample = 0.0;
+  
+  // Update NR52 channel status bits based on channel enabled states
+  void updateNR52ChannelStatus() {
+    int channelStatus = (nr52 & 0x80); // Keep APU enabled bit
+    channelStatus |= 0x70; // Bits 4-6 always read as 1
+    
+    if (channel1.enabled) channelStatus |= 0x01;
+    if (channel2.enabled) channelStatus |= 0x02;
+    if (channel3.enabled) channelStatus |= 0x04;
+    if (channel4.enabled) channelStatus |= 0x08;
+    
+    nr52 = channelStatus;
+  }
+
 
   List<int> mixAudioChannels() {
+    // Get raw digital channel outputs (0-15 range)
+    int ch1Digital = channel1.getOutput(); // 0-15
+    int ch2Digital = channel2.getOutput(); // 0-15
+    int ch3Digital = channel3.getOutput(); // 0-15
+    int ch4Digital = channel4.getOutput(); // 0-15
+
+    // Optional debug output (disabled for production)
+    // _debugSampleCounter++;
+    // if (_debugSampleCounter % 2000 == 0 && _debugSampleCounter < 20000) {
+    //   print('APU: CH1=$ch1Digital CH2=$ch2Digital CH3=$ch3Digital CH4=$ch4Digital NR51=${nr51.toRadixString(16)} NR50=${nr50.toRadixString(16)}');
+    // }
+
+    // Convert digital values through DACs (0-15) -> (-1.0 to +1.0)
+    // Pan Docs: "Digital 0 maps to analog 1, digital 15 maps to analog -1" (negative slope)
+    double ch1Analog = 1.0 - (ch1Digital / 7.5);
+    double ch2Analog = 1.0 - (ch2Digital / 7.5);
+    double ch3Analog = 1.0 - (ch3Digital / 7.5);
+    double ch4Analog = 1.0 - (ch4Digital / 7.5);
+
+    // Mix channels according to NR51 panning
     double left = 0.0;
     double right = 0.0;
 
-    // Channel 1 (pulse with sweep)
-    double ch1Output = channel1.getOutput().toDouble();
-    if ((nr51 & 0x01) != 0) right += ch1Output;
-    if ((nr51 & 0x10) != 0) left += ch1Output;
+    // Channel routing per NR51 register
+    if ((nr51 & 0x10) != 0) left += ch1Analog;   // CH1 -> Left
+    if ((nr51 & 0x01) != 0) right += ch1Analog;  // CH1 -> Right
 
-    // Channel 2 (pulse)
-    double ch2Output = channel2.getOutput().toDouble();
-    if ((nr51 & 0x02) != 0) right += ch2Output;
-    if ((nr51 & 0x20) != 0) left += ch2Output;
+    if ((nr51 & 0x20) != 0) left += ch2Analog;   // CH2 -> Left
+    if ((nr51 & 0x02) != 0) right += ch2Analog;  // CH2 -> Right
 
-    // Channel 3 (wave)
-    double ch3Output = channel3.getOutput().toDouble();
-    if ((nr51 & 0x04) != 0) right += ch3Output;
-    if ((nr51 & 0x40) != 0) left += ch3Output;
+    if ((nr51 & 0x40) != 0) left += ch3Analog;   // CH3 -> Left
+    if ((nr51 & 0x04) != 0) right += ch3Analog;  // CH3 -> Right
 
-    // Channel 4 (noise)
-    double ch4Output = channel4.getOutput().toDouble();
-    if ((nr51 & 0x08) != 0) right += ch4Output;
-    if ((nr51 & 0x80) != 0) left += ch4Output;
+    if ((nr51 & 0x80) != 0) left += ch4Analog;   // CH4 -> Left
+    if ((nr51 & 0x08) != 0) right += ch4Analog;  // CH4 -> Right
 
-    // Apply the master volume (0-7 range) - correct Game Boy mixing
-    left = (left * (leftVolume + 1)) / 8.0;
-    right = (right * (rightVolume + 1)) / 8.0;
+    // Apply master volume control (NR50)
+    // Pan Docs: "Master volume is (volume + 1) / 8"
+    left *= (leftVolume + 1) / 8.0;
+    right *= (rightVolume + 1) / 8.0;
 
-    // Apply high-pass filter for DC blocking (Game Boy authentic)
-    const double alpha = 0.999; // ~5Hz cutoff for authentic Game Boy sound
-    double leftFiltered = left - _leftHighPassState;
-    _leftHighPassState += leftFiltered * (1 - alpha);
-    double rightFiltered = right - _rightHighPassState;
-    _rightHighPassState += rightFiltered * (1 - alpha);
+    // High-pass filter for DC removal (authentic Game Boy)
+    const double alpha = 0.9996;
+    _leftHighPassState = alpha * (_leftHighPassState + left - _lastLeftSample);
+    _rightHighPassState = alpha * (_rightHighPassState + right - _lastRightSample);
+    _lastLeftSample = left;
+    _lastRightSample = right;
 
-    // Minimal low-pass filtering to preserve authentic Game Boy sound
-    const double lowPassAlpha = 0.95; // Much less aggressive filtering
-    leftFiltered *= lowPassAlpha;
-    rightFiltered *= lowPassAlpha;
-
-    // Scale to 16-bit range with authentic Game Boy characteristics
-    // Game Boy DAC outputs values from -15 to +15, scale authentically
-    const double scalingFactor = 512.0; // More authentic Game Boy volume levels
-
-    int leftSample =
-        (leftFiltered * scalingFactor).clamp(-32768, 32767).toInt();
-    int rightSample =
-        (rightFiltered * scalingFactor).clamp(-32768, 32767).toInt();
+    // Convert to 16-bit samples for SDL output
+    // Game Boy can have up to 4 channels mixed, so range is roughly [-4.0, +4.0]
+    // Scale to 16-bit range [-32768, +32767] with headroom to prevent clipping
+    const double scalingFactor = 6144.0; // 32768 / 5.33 for headroom
+    int leftSample = (_leftHighPassState * scalingFactor).clamp(-32768, 32767).toInt();
+    int rightSample = (_rightHighPassState * scalingFactor).clamp(-32768, 32767).toInt();
 
     return [leftSample, rightSample];
   }
@@ -619,8 +653,8 @@ class APU {
       _queueSizeCheckCounter = 0;
       try {
         int queueSize = getQueuedAudioSize();
-        if (queueSize > 16384) {
-          // If more than 16KB queued
+        if (queueSize > 65536) {
+          // If more than 64KB queued - much higher threshold
           clearQueuedAudio(); // Clear queue to reduce latency
         }
       } catch (e) {

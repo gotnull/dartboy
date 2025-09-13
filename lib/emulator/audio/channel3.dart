@@ -6,18 +6,24 @@ class Channel3 {
   int nr33 = 0; // Frequency low (NR33)
   int nr34 = 0; // Frequency high + Control (NR34)
 
-  // Internal variables
+  // Internal state
   int frequency = 0; // Current frequency (11 bits)
-  int frequencyTimer = 0; // Frequency timer
-  int lengthCounter = 0; // Length counter
-  int volumeShift = 0; // Volume shift (0: Mute, 1: 100%, 2: 50%, 3: 25%)
-  int waveformIndex = 0; // Index in the waveform RAM (0-31)
-  int sampleBuffer = 0; // Current sample (4 bits)
-  bool enabled = false; // Channel enabled flag
-  bool dacEnabled = false; // DAC enabled flag
+  int frequencyTimer = 0; // Frequency timer (counts down in CPU cycles)
+  int sampleIndex = 0; // Current sample index (0-31)
+  int currentSample = 0; // Current 4-bit sample value
+  int lengthCounter = 0; // Length counter (0-256)
 
-  // Waveform RAM (32 bytes, 64 nibbles)
-  List<int> waveformRAM = List<int>.filled(16, 0); // 16 bytes (32 samples)
+  // Volume control
+  int volumeShift = 0; // Volume shift (0: Mute, 1: 100%, 2: 50%, 3: 25%)
+
+  // Control flags
+  bool enabled = false; // Channel enabled flag
+  bool dacEnabled = false; // DAC enabled (NR30 bit 7)
+  bool lengthEnabled = false; // Length counter enabled
+
+  // Waveform RAM (16 bytes storing 32 4-bit samples)
+  // Pan Docs: "32 4-bit samples played in sequence"
+  List<int> waveformRAM = List<int>.filled(16, 0);
 
   // Constructor
   Channel3();
@@ -77,65 +83,80 @@ class Channel3 {
     }
   }
 
-  // Length counter enabled flag
-  bool lengthEnabled = false;
 
   // Trigger the channel (on write to NR34 with bit 7 set)
+  // Pan Docs: "Triggering a sound restarts it from the beginning"
   void trigger() {
+    // Channel is enabled only if DAC is enabled
     enabled = dacEnabled;
-    frequencyTimer = (2048 - frequency) * 2;
-    waveformIndex = 0;
-    
-    // Length counter reloading
-    if (lengthCounter == 0) {
-      lengthCounter = 256;
-      // If length is enabled and frame sequencer is about to clock length, subtract 1
-      if (lengthEnabled && (frameSequencer & 1) == 0) {
-        lengthCounter = 255;
+
+    if (enabled) {
+      // Reset frequency timer with initial period
+      frequencyTimer = 2 * (2048 - frequency);
+
+      // Reset sample index to start of wave RAM
+      sampleIndex = 0;
+
+      // Read first sample from wave RAM
+      int firstByte = waveformRAM[0];
+      currentSample = (firstByte >> 4) & 0x0F; // High nibble of first byte
+
+      // Length counter handling
+      if (lengthCounter == 0) {
+        lengthCounter = 256; // Wave channel has 256-step length counter
+        // Extra clocking if frame sequencer is about to clock length
+        if (lengthEnabled && (frameSequencer & 1) == 0) {
+          lengthCounter--;
+          if (lengthCounter == 0) enabled = false;
+        }
       }
     }
-    
-    sampleBuffer = 0;
   }
 
   // Update the frequency timer based on the current frequency
   void updateFrequencyTimer() {
     frequencyTimer = (2048 - frequency) * 2;
-    if (frequencyTimer <= 0) frequencyTimer = 1; // Prevent negative values
+    if (frequencyTimer <= 0) frequencyTimer = 2; // Ensure minimum period
   }
 
   // Update method called every CPU cycle - optimized for performance
+  // Update method called every CPU cycle - cycle accurate per Pan Docs
   void tick(int cycles) {
     if (!enabled) return;
 
-    // Frequency timer - optimized batch processing for wave channel
+    // Frequency timer decrements every CPU cycle
+    // Pan Docs: "sample index advances at 32x channel frequency"
+    // Period = 2 * (2048 - frequency) CPU cycles (different from pulse channels)
     frequencyTimer -= cycles;
     while (frequencyTimer <= 0) {
-      int period = (2048 - frequency) * 2;
-      if (period <= 0) period = 1;
+      // Calculate the reload period
+      int period = 2 * (2048 - frequency);
+      if (period <= 0) period = 2; // Minimum period to prevent locks
+
+      // Reload timer
       frequencyTimer += period;
-      advanceWaveform();
+
+      // Advance sample index and read new sample
+      advanceSampleIndex();
     }
   }
 
-  // Advance the waveform index and update the sample buffer
-  void advanceWaveform() {
-    // Update waveformIndex and wrap it to 32 samples (0-31)
-    waveformIndex = (waveformIndex + 1) % 32;
+  // Advance sample index and read new 4-bit sample from wave RAM
+  // Pan Docs: "sample index counter advances at 32x channel frequency"
+  void advanceSampleIndex() {
+    // Advance sample index (0-31, wrapping)
+    sampleIndex = (sampleIndex + 1) % 32;
 
-    // Calculate the byte index in waveformRAM
-    int byteIndex = waveformIndex ~/ 2;
-
-    // Retrieve the byte from waveformRAM
+    // Read new 4-bit sample from wave RAM
+    // Wave RAM stores 32 4-bit samples in 16 bytes
+    int byteIndex = sampleIndex ~/ 2;
     int sampleData = waveformRAM[byteIndex];
 
-    // Update sampleBuffer based on high or low nibble
-    if (waveformIndex % 2 == 0) {
-      // High nibble
-      sampleBuffer = (sampleData >> 4) & 0x0F;
+    // Extract 4-bit sample (high nibble for even indices, low for odd)
+    if (sampleIndex % 2 == 0) {
+      currentSample = (sampleData >> 4) & 0x0F; // High nibble
     } else {
-      // Low nibble
-      sampleBuffer = sampleData & 0x0F;
+      currentSample = sampleData & 0x0F; // Low nibble
     }
   }
 
@@ -150,31 +171,33 @@ class Channel3 {
   }
 
   // Get the output sample for the current state
+  // Returns digital value (0-15) that will be converted by DAC
   int getOutput() {
+    // If channel or DAC is disabled, output 0
     if (!enabled || !dacEnabled) return 0;
 
+    // Apply volume control via right shift
     int outputLevel;
     switch (volumeShift) {
       case 0:
-        outputLevel = 0; // Mute
+        outputLevel = 0; // Mute (0%)
         break;
       case 1:
-        outputLevel = sampleBuffer; // 100%
+        outputLevel = currentSample; // 100%
         break;
       case 2:
-        outputLevel = sampleBuffer >> 1; // 50%
+        outputLevel = currentSample >> 1; // 50%
         break;
       case 3:
-        outputLevel = sampleBuffer >> 2; // 25%
+        outputLevel = currentSample >> 2; // 25%
         break;
       default:
         outputLevel = 0;
         break;
     }
 
-    // Convert to signed value (-8 to +7)
-    outputLevel -= 8;
-    return outputLevel;
+    // Return digital value (0-15) for DAC conversion
+    return outputLevel & 0x0F;
   }
 
   // Read from Waveform RAM (0xFF30 - 0xFF3F)
@@ -198,8 +221,8 @@ class Channel3 {
     nr34 = 0;
     frequency = 0;
     frequencyTimer = 0;
-    waveformIndex = 0;
-    sampleBuffer = 0;
+    sampleIndex = 0;
+    currentSample = 0;
     lengthCounter = 0;
     volumeShift = 0;
     enabled = false;

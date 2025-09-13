@@ -9,8 +9,8 @@ static SDL_AudioDeviceID audio_device;
 // SDL audio specification
 static SDL_AudioSpec audio_spec;
 
-// Audio buffer management
-static const int MAX_QUEUED_AUDIO = 8192; // Maximum bytes to queue
+// Audio buffer management - increased for smoother playback
+static const int MAX_QUEUED_AUDIO = 32768; // Maximum bytes to queue (increased from 8192)
 
 int is_audio_device_active()
 {

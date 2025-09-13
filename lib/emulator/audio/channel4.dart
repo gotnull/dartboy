@@ -5,24 +5,24 @@ class Channel4 {
   int nr43 = 0; // Polynomial Counter (NR43)
   int nr44 = 0; // Counter/Consecutive; Initial (NR44)
 
-  // Internal variables
-  int frequencyTimer = 0; // Frequency timer
-  int lengthCounter = 0; // Length counter
+  // Internal state
+  int frequencyTimer = 0; // Frequency timer (counts down in CPU cycles)
+  int lengthCounter = 0; // Length counter (0-64)
   int volume = 0; // Current volume (0-15)
+
+  // LFSR state (Linear Feedback Shift Register for noise generation)
+  int lfsr = 0x7FFF; // 15-bit LFSR (starts with all bits set)
+  bool widthMode = false; // false=15-bit mode, true=7-bit mode
+
+  // Envelope state
   int envelopeTimer = 0; // Envelope timer
-  int envelopePeriod = 0;
+  int envelopePeriod = 0; // Envelope period (0-7)
   bool envelopeIncrease = false; // Envelope direction
-  int lfsr = 0x7FFF; // 15-bit LFSR starting value
-  bool widthMode7 = false; // LFSR width mode (15-bit or 7-bit)
 
-  // Channel enabled flag
-  bool enabled = false;
-
-  // Length counter enabled flag
-  bool lengthEnabled = false;
-
-  // DAC enabled flag (determined by NR42)
-  bool dacEnabled = false;
+  // Control flags
+  bool enabled = false; // Channel enabled flag
+  bool lengthEnabled = false; // Length counter enabled
+  bool dacEnabled = false; // DAC enabled (NR42 bits 3-7 not all zero)
 
   // Constructor
   Channel4();
@@ -53,7 +53,8 @@ class Channel4 {
   void writeNR43(int value) {
     nr43 = value;
     updateFrequencyTimer();
-    widthMode7 = (nr43 & 0x08) != 0;
+    // Bit 3 controls LFSR width: 0=15-bit, 1=7-bit
+    widthMode = (nr43 & 0x08) != 0;
   }
 
   // NR44: Counter/Consecutive; Initial
@@ -82,20 +83,21 @@ class Channel4 {
   // Trigger the channel (on write to NR44 with bit 7 set)
   void trigger() {
     enabled = dacEnabled;
-    frequencyTimer = getFrequencyTimerPeriod();
-    envelopeTimer = envelopePeriod;
-    volume = (nr42 >> 4) & 0x0F;
-    
-    // Length counter reloading
-    if (lengthCounter == 0) {
-      lengthCounter = 64;
-      // If length is enabled and frame sequencer is about to clock length, subtract 1
-      if (lengthEnabled && (frameSequencer & 1) == 0) {
-        lengthCounter = 63;
+    if (enabled) {
+      frequencyTimer = getFrequencyTimerPeriod();
+      envelopeTimer = envelopePeriod;
+      volume = (nr42 >> 4) & 0x0F;
+      lfsr = 0x7FFF; // Reset LFSR to all ones
+
+      // Length counter reloading
+      if (lengthCounter == 0) {
+        lengthCounter = 64;
+        // If length is enabled and frame sequencer is about to clock length, subtract 1
+        if (lengthEnabled && (frameSequencer & 1) == 0) {
+          lengthCounter = 63;
+        }
       }
     }
-    
-    lfsr = 0x7FFF; // Reset LFSR to all ones
   }
 
   // Calculate the frequency timer period based on NR43
@@ -138,7 +140,7 @@ class Channel4 {
   // Update the frequency timer based on NR43
   void updateFrequencyTimer() {
     frequencyTimer = getFrequencyTimerPeriod();
-    if (frequencyTimer <= 0) frequencyTimer = 1; // Prevent negative values
+    if (frequencyTimer <= 0) frequencyTimer = 8; // Ensure minimum period
   }
 
   // Update method called every CPU cycle - optimized for performance
@@ -155,14 +157,26 @@ class Channel4 {
     }
   }
 
-  // Clock the LFSR
+  // Clock the LFSR (Linear Feedback Shift Register)
+  // Pan Docs: "15-bit LFSR with taps at bit 0 and bit 1"
   void clockLFSR() {
-    int bit = ((lfsr & 1) ^ ((lfsr >> 1) & 1));
-    lfsr = (lfsr >> 1) | (bit << 14);
-    if (widthMode7) {
-      // Set bit 6 with the XOR result
-      lfsr = (lfsr & ~(1 << 6)) | (bit << 6);
+    // Calculate feedback bit (XOR of bits 0 and 1)
+    int feedbackBit = (lfsr & 1) ^ ((lfsr >> 1) & 1);
+
+    // Shift LFSR right by 1 position
+    lfsr >>= 1;
+
+    // Insert feedback bit at position 14 (bit 14)
+    lfsr |= (feedbackBit << 14);
+
+    // In 7-bit mode, also insert feedback bit at position 6
+    if (widthMode) {
+      lfsr &= ~(1 << 6); // Clear bit 6
+      lfsr |= (feedbackBit << 6); // Set bit 6 to feedback bit
     }
+
+    // Keep LFSR within 15-bit range
+    lfsr &= 0x7FFF;
   }
 
   // Update length counter (called by frame sequencer)
@@ -196,11 +210,17 @@ class Channel4 {
   }
 
   // Get the output sample for the current state
+  // Returns digital value (0-15) that will be converted by DAC
   int getOutput() {
+    // If channel or DAC is disabled, output 0
     if (!enabled || !dacEnabled) return 0;
-    int output = (~lfsr) & 1;
-    int sample = output == 0 ? -volume : volume;
-    return sample;
+
+    // Output is inverted bit 0 of LFSR
+    // Pan Docs: "output is bit 0 of the LFSR, inverted"
+    int outputBit = (~lfsr) & 1;
+
+    // Output volume when bit is 1, 0 when bit is 0
+    return outputBit == 1 ? volume : 0;
   }
 
   // Reset the channel
@@ -219,7 +239,7 @@ class Channel4 {
     lengthEnabled = false;
     envelopeIncrease = false;
     envelopePeriod = 0;
-    widthMode7 = false;
+    widthMode = false;
   }
 
   // Frame sequencer reference (needs to be set from Audio class)
