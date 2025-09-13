@@ -19,7 +19,7 @@ DynamicLibrary? _loadAudioLibrary() {
   if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
     return null;
   }
-  
+
   try {
     // Try loading from the app bundle first (for production builds)
     return DynamicLibrary.open('libaudio.dylib');
@@ -30,14 +30,17 @@ DynamicLibrary? _loadAudioLibrary() {
     } catch (e) {
       try {
         // Try loading from the build directory
-        return DynamicLibrary.open('./build/macos/Build/Products/Debug/dartboy.app/Contents/Frameworks/libaudio.dylib');
+        return DynamicLibrary.open(
+            './build/macos/Build/Products/Debug/dartboy.app/Contents/Frameworks/libaudio.dylib');
       } catch (e) {
         try {
           // Try with full path to macos directory
-          return DynamicLibrary.open('/Users/fulvio/development/dartboy/macos/libaudio.dylib');
+          return DynamicLibrary.open(
+              '/Users/fulvio/development/dartboy/macos/libaudio.dylib');
         } catch (e) {
           // Final fallback - return null for graceful degradation
-          print('Warning: Failed to load libaudio.dylib. Audio will be disabled.');
+          print(
+              'Warning: Failed to load libaudio.dylib. Audio will be disabled.');
           return null;
         }
       }
@@ -74,7 +77,9 @@ InitAudioDart get initAudio {
     return _initAudio ??= (int sampleRate, int channels, int bufferSize) => -1;
   }
   try {
-    return _initAudio ??= audioLib!.lookup<NativeFunction<InitAudioNative>>('init_audio').asFunction();
+    return _initAudio ??= audioLib!
+        .lookup<NativeFunction<InitAudioNative>>('init_audio')
+        .asFunction();
   } catch (e) {
     // Return dummy function if audio library loading fails
     return _initAudio ??= (int sampleRate, int channels, int bufferSize) => -1;
@@ -85,12 +90,16 @@ StreamAudioDart? _streamAudio;
 StreamAudioDart get streamAudio {
   _initializeAudioLib();
   if (audioLib == null) {
-    return _streamAudio ??= (Pointer<Uint8> buffer, int length) {}; // Dummy function
+    return _streamAudio ??=
+        (Pointer<Uint8> buffer, int length) {}; // Dummy function
   }
   try {
-    return _streamAudio ??= audioLib!.lookup<NativeFunction<StreamAudioNative>>('stream_audio').asFunction();
+    return _streamAudio ??= audioLib!
+        .lookup<NativeFunction<StreamAudioNative>>('stream_audio')
+        .asFunction();
   } catch (e) {
-    return _streamAudio ??= (Pointer<Uint8> buffer, int length) {}; // Dummy function
+    return _streamAudio ??=
+        (Pointer<Uint8> buffer, int length) {}; // Dummy function
   }
 }
 
@@ -101,7 +110,9 @@ TerminateAudioDart get terminateAudio {
     return _terminateAudio ??= () {}; // Dummy function
   }
   try {
-    return _terminateAudio ??= audioLib!.lookup<NativeFunction<TerminateAudioNative>>('terminate_audio').asFunction();
+    return _terminateAudio ??= audioLib!
+        .lookup<NativeFunction<TerminateAudioNative>>('terminate_audio')
+        .asFunction();
   } catch (e) {
     return _terminateAudio ??= () {}; // Dummy function
   }
@@ -121,7 +132,10 @@ GetQueuedAudioSizeDart get getQueuedAudioSize {
     return _getQueuedAudioSize ??= () => 0; // Dummy function
   }
   try {
-    return _getQueuedAudioSize ??= audioLib!.lookup<NativeFunction<GetQueuedAudioSizeNative>>('get_queued_audio_size').asFunction();
+    return _getQueuedAudioSize ??= audioLib!
+        .lookup<NativeFunction<GetQueuedAudioSizeNative>>(
+            'get_queued_audio_size')
+        .asFunction();
   } catch (e) {
     return _getQueuedAudioSize ??= () => 0; // Dummy function
   }
@@ -134,7 +148,9 @@ ClearQueuedAudioDart get clearQueuedAudio {
     return _clearQueuedAudio ??= () {}; // Dummy function
   }
   try {
-    return _clearQueuedAudio ??= audioLib!.lookup<NativeFunction<ClearQueuedAudioNative>>('clear_queued_audio').asFunction();
+    return _clearQueuedAudio ??= audioLib!
+        .lookup<NativeFunction<ClearQueuedAudioNative>>('clear_queued_audio')
+        .asFunction();
   } catch (e) {
     return _clearQueuedAudio ??= () {}; // Dummy function
   }
@@ -169,7 +185,7 @@ class APU {
   int nr50 = 0;
   int nr51 = 0;
   int nr52 = 0x80; // Sound on by default
-  
+
   // Mobile audio system
   MobileAudio? _mobileAudio;
   bool get _isMobile => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
@@ -182,8 +198,11 @@ class APU {
 
   Future<void> init() async {
     if (_isMobile) {
+      print('APU: Initializing MobileAudio...');
       await _mobileAudio?.init();
+      print('APU: MobileAudio initialized.');
       await _mobileAudio?.startAudio();
+      print('APU: MobileAudio started.');
       isInitialized = Configuration.enableAudio;
     } else {
       int result = initAudio(sampleRate, channels, bufferSize);
@@ -250,10 +269,12 @@ class APU {
         if (channel2.enabled) channelStatus |= 0x02;
         if (channel3.enabled) channelStatus |= 0x04;
         if (channel4.enabled) channelStatus |= 0x08;
-        return (nr52 & 0x80) | 0x70 | channelStatus; // Bit 7 = power, bits 4-6 = 1, bits 0-3 = channel status
+        return (nr52 & 0x80) |
+            0x70 |
+            channelStatus; // Bit 7 = power, bits 4-6 = 1, bits 0-3 = channel status
       case 0xFF15: // Unused register between NR14 and NR20
         return 0xFF;
-      case 0xFF1F: // Unused register between NR24 and NR30  
+      case 0xFF1F: // Unused register between NR24 and NR30
         return 0xFF;
       default:
         // Only print unknown register messages for addresses that should be audio registers
@@ -376,7 +397,8 @@ class APU {
       default:
         // Only print unknown register messages for addresses that should be audio registers
         if (address >= 0xFF10 && address <= 0xFF3F) {
-          print("Unknown audio register write: 0x${address.toRadixString(16)} = $value");
+          print(
+              "Unknown audio register write: 0x${address.toRadixString(16)} = $value");
         }
     }
   }
@@ -497,47 +519,17 @@ class APU {
 
     if (_isMobile) {
       // Update mobile audio with channel states
-      _updateMobileAudio();
+      _updateMobileAudio(leftSample, rightSample);
     } else {
       // Queue the stereo audio sample for desktop
       queueAudioSample(leftSample, rightSample);
     }
   }
 
-  void _updateMobileAudio() {
+  void _updateMobileAudio(int leftSample, int rightSample) {
     if (_mobileAudio == null) return;
-    
-    // Update mobile audio with channel parameters
-    _mobileAudio!.setChannelEnabled(1, channel1.enabled);
-    _mobileAudio!.setChannelEnabled(2, channel2.enabled);  
-    _mobileAudio!.setChannelEnabled(3, channel3.enabled);
-    _mobileAudio!.setChannelEnabled(4, channel4.enabled);
-    
-    // Set frequencies (convert from Game Boy frequency to Hz)
-    if (channel1.enabled) {
-      double freq = 131072.0 / (2048 - channel1.frequency);
-      _mobileAudio!.setChannelFrequency(1, freq);
-      _mobileAudio!.setChannelVolume(1, channel1.volume / 15.0);
-      _mobileAudio!.setChannelDuty(1, channel1.dutyCycle);
-    }
-    
-    if (channel2.enabled) {
-      double freq = 131072.0 / (2048 - channel2.frequency);
-      _mobileAudio!.setChannelFrequency(2, freq);
-      _mobileAudio!.setChannelVolume(2, channel2.volume / 15.0);
-      _mobileAudio!.setChannelDuty(2, channel2.dutyCycle);
-    }
-    
-    if (channel3.enabled) {
-      double freq = 131072.0 / (2048 - channel3.frequency);
-      _mobileAudio!.setChannelFrequency(3, freq);
-      _mobileAudio!.setChannelVolume(3, channel3.enabled ? 0.5 : 0.0);
-      _mobileAudio!.setWaveformRAM(channel3.waveformRAM);
-    }
-    
-    if (channel4.enabled) {
-      _mobileAudio!.setChannelVolume(4, channel4.volume / 15.0);
-    }
+
+    _mobileAudio!.queueSample(leftSample, rightSample);
   }
 
   // High-pass filter state for DC blocking
@@ -587,9 +579,11 @@ class APU {
     // Scale to 16-bit range with proper headroom
     // Game Boy DAC outputs values from -15 to +15, scale appropriately
     const double scalingFactor = 1000.0; // Conservative scaling
-    
-    int leftSample = (leftFiltered * scalingFactor).clamp(-32768, 32767).toInt();
-    int rightSample = (rightFiltered * scalingFactor).clamp(-32768, 32767).toInt();
+
+    int leftSample =
+        (leftFiltered * scalingFactor).clamp(-32768, 32767).toInt();
+    int rightSample =
+        (rightFiltered * scalingFactor).clamp(-32768, 32767).toInt();
 
     return [leftSample, rightSample];
   }
@@ -609,7 +603,8 @@ class APU {
       _queueSizeCheckCounter = 0;
       try {
         int queueSize = getQueuedAudioSize();
-        if (queueSize > 16384) { // If more than 16KB queued
+        if (queueSize > 16384) {
+          // If more than 16KB queued
           clearQueuedAudio(); // Clear queue to reduce latency
         }
       } catch (e) {
@@ -630,10 +625,16 @@ class APU {
 
   Future<void> stopAudio() async {
     if (isInitialized) {
-      terminateAudio();
+      if (_isMobile) {
+        print('APU: Stopping MobileAudio...');
+        _mobileAudio?.stopAudio();
+        print('APU: MobileAudio stopped.');
+      } else {
+        terminateAudio();
+      }
       isInitialized = false;
     }
-    
+
     // Free the audio buffer when stopping
     if (_audioBufferPtr != null) {
       malloc.free(_audioBufferPtr!);

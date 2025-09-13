@@ -35,11 +35,11 @@ class Emulator {
   int fps = 0;
 
   /// Load a ROM from a file and create the HW components for the emulator.
-  void loadROM(Uint8List data) {
+  Future<void> loadROM(Uint8List data) async {
     if (state != EmulatorState.waiting) {
       cpu?.reset();
       print("Emulator was reset to load ROM.");
-      return;
+      return Future.value();
     }
 
     Cartridge cartridge = Cartridge();
@@ -49,7 +49,7 @@ class Emulator {
 
     state = EmulatorState.ready;
 
-    printCartridgeInfo();
+    await printCartridgeInfo();
 
     print("Available Controllers:");
     final gamepads = Gamepads.list();
@@ -134,7 +134,7 @@ class Emulator {
   }
 
   /// Print some information about the ROM file loaded into the emulator.
-  void printCartridgeInfo() {
+  Future<void> printCartridgeInfo() async {
     print("Cartridge info:");
     print("Title: ${cpu?.cartridge.name}");
     print("ROM Size: ${cpu?.cartridge.size}k");
@@ -150,7 +150,7 @@ class Emulator {
     // Note: Window title management removed for cross-platform compatibility
     // Title would be: 'Dart Boy: ${cpu?.cartridge.name}'
 
-    cpu?.apu.init();
+    await cpu?.apu.init();
   }
 
   /// Reset the emulator, stop running the code and unload the cartridge
