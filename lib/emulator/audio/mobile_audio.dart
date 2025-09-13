@@ -14,15 +14,15 @@ class MobileAudio {
 
   bool _initialized = false;
   static const int sampleRate = 44100;
-  static const int bufferSize = 1024; // Smaller buffer for lower latency
+  static const int bufferSize = 2048; // Larger buffer for smoother playback
 
   int _debugPrintCounter = 0;
-  DateTime? _debugPrintStartTime;
-  static const int _debugPrintDurationSeconds = 2;
   
-  // Buffer for accumulating samples before sending to stream
-  final List<int> _sampleBuffer = [];
-  static const int _bufferThreshold = 512; // Back to original size
+  // Pre-allocated buffer for better performance
+  static const int _maxBufferSize = 4096;
+  final Uint8List _audioBuffer = Uint8List(_maxBufferSize);
+  int _bufferIndex = 0;
+  static const int _flushThreshold = 2048; // Flush when buffer is half full
   
 
   /// Initialize iOS audio system
@@ -69,36 +69,39 @@ class MobileAudio {
   void queueSample(int leftSample, int rightSample) {
     if (!_initialized) return;
 
-    // More efficient: Add samples individually instead of creating list
-    _sampleBuffer.add(leftSample);
-    _sampleBuffer.add(rightSample);
-    
-    // Send buffer when it reaches threshold
-    if (_sampleBuffer.length >= _bufferThreshold) {
-      _flushSampleBuffer();
+    // Check if buffer has space (4 bytes per stereo sample)
+    if (_bufferIndex + 4 > _maxBufferSize) {
+      _flushAudioBuffer();
     }
 
-    // Reduce debug prints frequency for better performance
-    if (_debugPrintCounter % 1000 == 0 && _debugPrintCounter < 5000) {
-      _debugPrintStartTime ??= DateTime.now();
-      if (DateTime.now().difference(_debugPrintStartTime!).inSeconds < _debugPrintDurationSeconds) {
-        print('Audio buffer: ${_sampleBuffer.length}/$_bufferThreshold, playing: ${_mPlayer!.isPlaying}');
-      }
+    // Write directly to pre-allocated buffer (little endian 16-bit)
+    _audioBuffer[_bufferIndex] = leftSample & 0xFF;
+    _audioBuffer[_bufferIndex + 1] = (leftSample >> 8) & 0xFF;
+    _audioBuffer[_bufferIndex + 2] = rightSample & 0xFF;
+    _audioBuffer[_bufferIndex + 3] = (rightSample >> 8) & 0xFF;
+    _bufferIndex += 4;
+
+    // Flush when we reach the threshold for smoother playback
+    if (_bufferIndex >= _flushThreshold) {
+      _flushAudioBuffer();
+    }
+
+    // Minimal debug output
+    if (_debugPrintCounter % 5000 == 0 && _debugPrintCounter < 10000) {
+      print('Audio buffer: $_bufferIndex/$_maxBufferSize bytes, playing: ${_mPlayer!.isPlaying}');
     }
     _debugPrintCounter++;
   }
 
-  void _flushSampleBuffer() {
-    if (_sampleBuffer.isEmpty) return;
+  void _flushAudioBuffer() {
+    if (_bufferIndex == 0) return;
     
-    // Convert int samples to bytes
-    final ByteData byteData = ByteData(_sampleBuffer.length * 2); // 2 bytes per sample
-    for (int i = 0; i < _sampleBuffer.length; i++) {
-      byteData.setInt16(i * 2, _sampleBuffer[i], Endian.little);
-    }
+    // Send only the filled portion of the buffer
+    final Uint8List audioData = Uint8List.fromList(_audioBuffer.take(_bufferIndex).toList());
+    _audioStreamController!.add(audioData);
     
-    _audioStreamController!.add(byteData.buffer.asUint8List());
-    _sampleBuffer.clear();
+    // Reset buffer index
+    _bufferIndex = 0;
   }
 
   Future<void> startAudio() async {
@@ -109,7 +112,7 @@ class MobileAudio {
 
   void stopAudio() {
     // Flush any remaining samples before stopping
-    _flushSampleBuffer();
+    _flushAudioBuffer();
     
     if (_mPlayer!.isPlaying) {
       _mPlayer!.stopPlayer();

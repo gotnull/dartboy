@@ -452,12 +452,12 @@ class APU {
       frameSequencerCycles -= cyclesPerFrameSequencer;
     }
 
-    // Generate audio samples at the correct intervals (optimized)
+    // Generate audio samples at the correct intervals (optimized for mobile)
     if (accumulatedCycles >= cyclesPerSample) {
       int samplesToGenerate = accumulatedCycles ~/ cyclesPerSample;
       if (samplesToGenerate > 0) {
         // Limit to prevent audio buffer overflow and reduce processing load
-        samplesToGenerate = samplesToGenerate.clamp(1, 4);
+        samplesToGenerate = samplesToGenerate.clamp(1, 2); // Reduce max samples per tick
         for (int i = 0; i < samplesToGenerate; i++) {
           mixAndQueueAudioSample();
         }
@@ -592,9 +592,9 @@ class APU {
     leftFiltered *= lowPassAlpha;
     rightFiltered *= lowPassAlpha;
 
-    // Scale to 16-bit range with proper headroom
+    // Scale to 16-bit range with proper headroom (slightly reduced for mobile)
     // Game Boy DAC outputs values from -15 to +15, scale appropriately
-    const double scalingFactor = 1000.0; // Conservative scaling
+    const double scalingFactor = 800.0; // Reduced scaling for smoother mobile performance
 
     int leftSample =
         (leftFiltered * scalingFactor).clamp(-32768, 32767).toInt();
