@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:dartboy/emulator/audio/apu.dart';
+import 'package:dartboy/emulator/configuration.dart';
 import 'package:dartboy/emulator/cpu/instructions.dart';
 import 'package:dartboy/emulator/cpu/registers.dart';
 import 'package:dartboy/emulator/graphics/ppu.dart';
@@ -47,6 +48,12 @@ class CPU {
 
   /// The current CPU clock cycle since the beginning of the emulation.
   int clocks = 0;
+
+  // Performance optimization counters
+  int _ppuUpdateCounter = 0;
+  int _apuUpdateCounter = 0;
+  int _ppuAccumulatedCycles = 0;
+  int _apuAccumulatedCycles = 0;
 
   /// The number of cycles elapsed since the last speed emulation sleep.
   int cyclesSinceLastSleep = 0;
@@ -269,8 +276,44 @@ class CPU {
       }
     }
 
-    ppu.tick(delta);
-    apu.tick(delta);
+    // Performance optimization: batch PPU/APU updates
+    if (Configuration.mobileOptimization) {
+      _ppuAccumulatedCycles += delta;
+      _apuAccumulatedCycles += delta;
+      
+      _ppuUpdateCounter++;
+      if (_ppuUpdateCounter >= Configuration.ppuUpdateFrequency) {
+        ppu.tick(_ppuAccumulatedCycles);
+        _ppuAccumulatedCycles = 0;
+        _ppuUpdateCounter = 0;
+      }
+      
+      _apuUpdateCounter++;
+      if (_apuUpdateCounter >= Configuration.apuUpdateFrequency) {
+        apu.tick(_apuAccumulatedCycles);
+        _apuAccumulatedCycles = 0;
+        _apuUpdateCounter = 0;
+      }
+    } else {
+      ppu.tick(delta);
+      apu.tick(delta);
+    }
+  }
+
+  /// Flush any remaining accumulated cycles to PPU/APU (called at frame end)
+  void flushPendingUpdates() {
+    if (Configuration.mobileOptimization) {
+      if (_ppuAccumulatedCycles > 0) {
+        ppu.tick(_ppuAccumulatedCycles);
+        _ppuAccumulatedCycles = 0;
+        _ppuUpdateCounter = 0;
+      }
+      if (_apuAccumulatedCycles > 0) {
+        apu.tick(_apuAccumulatedCycles);
+        _apuAccumulatedCycles = 0;
+        _apuUpdateCounter = 0;
+      }
+    }
   }
 
   /// Triggers a particular interrupt by writing the correct interrupt bit to the interrupt register.

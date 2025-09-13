@@ -22,7 +22,8 @@ class MobileAudio {
   
   // Buffer for accumulating samples before sending to stream
   final List<int> _sampleBuffer = [];
-  static const int _bufferThreshold = 512; // Send in chunks
+  static const int _bufferThreshold = 512; // Back to original size
+  
 
   /// Initialize iOS audio system
   Future<void> init() async {
@@ -68,27 +69,23 @@ class MobileAudio {
   void queueSample(int leftSample, int rightSample) {
     if (!_initialized) return;
 
-    // Add samples to buffer (left, right)
-    _sampleBuffer.addAll([leftSample, rightSample]);
+    // More efficient: Add samples individually instead of creating list
+    _sampleBuffer.add(leftSample);
+    _sampleBuffer.add(rightSample);
     
     // Send buffer when it reaches threshold
     if (_sampleBuffer.length >= _bufferThreshold) {
       _flushSampleBuffer();
     }
 
-    // Limit debug prints to the first 5 seconds
-    _debugPrintStartTime ??= DateTime.now();
-    if (DateTime.now().difference(_debugPrintStartTime!).inSeconds <
-        _debugPrintDurationSeconds) {
-      if (_sampleBuffer.length % 100 == 0) { // Print every 100th sample to reduce spam
-        print(
-            'Buffer size: ${_sampleBuffer.length}, L=$leftSample, R=$rightSample, isPlaying: ${_mPlayer!.isPlaying}');
+    // Reduce debug prints frequency for better performance
+    if (_debugPrintCounter % 1000 == 0 && _debugPrintCounter < 5000) {
+      _debugPrintStartTime ??= DateTime.now();
+      if (DateTime.now().difference(_debugPrintStartTime!).inSeconds < _debugPrintDurationSeconds) {
+        print('Audio buffer: ${_sampleBuffer.length}/$_bufferThreshold, playing: ${_mPlayer!.isPlaying}');
       }
-    } else if (_debugPrintCounter == 0) {
-      print(
-          'Queued sample prints limited to first $_debugPrintDurationSeconds seconds.');
-      _debugPrintCounter++; // Ensure this message prints only once
     }
+    _debugPrintCounter++;
   }
 
   void _flushSampleBuffer() {

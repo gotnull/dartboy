@@ -33,6 +33,7 @@ class Emulator {
   int cycles = 0;
   int speed = 0;
   int fps = 0;
+  
 
   /// Load a ROM from a file and create the HW components for the emulator.
   Future<void> loadROM(Uint8List data) async {
@@ -206,6 +207,8 @@ class Emulator {
             cycles += cyclesUsed;
             totalCyclesExecuted += cyclesUsed;
           }
+          cpu!.flushPendingUpdates();
+          
           cpu!.ppu.resetFrameReady();
 
           // Calculate performance statistics
@@ -214,6 +217,7 @@ class Emulator {
             double elapsedSeconds = perfStopwatch.elapsedMicroseconds / 1e6;
             speed = (totalCyclesExecuted / elapsedSeconds).toInt();
             fps = (frameCounter / elapsedSeconds).round();
+
 
             perfStopwatch.reset();
             frameCounter = 0;

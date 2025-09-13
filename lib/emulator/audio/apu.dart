@@ -189,6 +189,9 @@ class APU {
   // Mobile audio system
   MobileAudio? _mobileAudio;
   bool get _isMobile => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
+  
+  // Audio performance optimization
+  int _audioSampleCounter = 0;
 
   APU(clockSpeed) : cyclesPerSample = clockSpeed ~/ defaultSampleRate {
     if (_isMobile) {
@@ -528,6 +531,19 @@ class APU {
 
   void _updateMobileAudio(int leftSample, int rightSample) {
     if (_mobileAudio == null) return;
+
+    // Completely disable audio processing if enabled for performance testing
+    if (Configuration.disableAudioForPerformance) {
+      return;
+    }
+
+    // Skip samples for better performance if mobile optimization is enabled
+    if (Configuration.mobileOptimization && Configuration.reducedAudioQuality) {
+      _audioSampleCounter++;
+      if (_audioSampleCounter % Configuration.audioSampleSkip != 0) {
+        return; // Skip this sample
+      }
+    }
 
     _mobileAudio!.queueSample(leftSample, rightSample);
   }

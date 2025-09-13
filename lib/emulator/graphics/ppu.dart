@@ -433,34 +433,33 @@ class PPU {
         int attributes =
             cpu.mmu.readVRAM(MemoryAddresses.vramPageSize + addressBase);
 
-        // Tile VRAM Bank number
-        if (attributes & 0x8 != 0) {
-          gbcVramBank = 1;
-        }
-
-        // Horizontal Flip
+        // Extract all attributes in one go for better performance
+        gbcVramBank = (attributes & 0x8) >> 3;
         flipX = (attributes & 0x20) != 0;
-
-        // Vertical Flip
         flipY = (attributes & 0x40) != 0;
-
-        // Background Palette number
         gbcPalette = attributes & 0x7;
       }
 
-      // Delegate tile drawing
-      drawTile(
-          bgPalettes[gbcPalette],
-          data,
-          -(scrollX % 8) + x * 8,
-          -(scrollY % 8) + y * 8,
-          tile,
-          scanline,
-          flipX,
-          flipY,
-          gbcVramBank,
-          0,
-          false);
+      // Calculate tile position  
+      int tileX = -(scrollX % 8) + x * 8;
+      int tileY = -(scrollY % 8) + y * 8;
+      
+      // Skip tiles that don't intersect with the current scanline
+      if (scanline >= tileY && scanline < tileY + 8) {
+        // Delegate tile drawing
+        drawTile(
+            bgPalettes[gbcPalette],
+            data,
+            tileX,
+            tileY,
+            tile,
+            scanline,
+            flipX,
+            flipY,
+            gbcVramBank,
+            0,
+            false);
+      }
     }
   }
 
@@ -541,7 +540,15 @@ class PPU {
     int line = scanline - y;
     int addressBase = MemoryAddresses.vramPageSize * bank + tile * 16;
 
-    // 8 pixel width
+    // Handle the x and y flipping by tweaking the indexes we are accessing
+    int logicalLine = (flipY ? 7 - line : line);
+    int address = addressBase + logicalLine * 2;
+
+    // Cache the tile line data to avoid multiple VRAM reads
+    int tileLow = cpu.mmu.readVRAM(address);
+    int tileHigh = cpu.mmu.readVRAM(address + 1);
+
+    // 8 pixel width - process all pixels at once with cached data
     for (int px = 0; px < 8; px++) {
       // Destination pixels
       int dx = x + px;
@@ -557,19 +564,12 @@ class PPU {
         continue;
       }
 
-      // Handle the x and y flipping by tweaking the indexes we are accessing
-      int logicalLine = (flipY ? 7 - line : line);
       int logicalX = (flipX ? 7 - px : px);
-      int address = addressBase + logicalLine * 2;
+      int bitMask = (0x80 >> logicalX);
 
-      // Upper bit of the color number
-      int paletteUpper =
-          (((cpu.mmu.readVRAM(address + 1) & (0x80 >> logicalX)) >>
-                  (7 - logicalX)) <<
-              1);
-      // lower bit of the color number
-      int paletteLower =
-          ((cpu.mmu.readVRAM(address) & (0x80 >> logicalX)) >> (7 - logicalX));
+      // Extract color bits from cached tile data
+      int paletteUpper = ((tileHigh & bitMask) >> (7 - logicalX)) << 1;
+      int paletteLower = (tileLow & bitMask) >> (7 - logicalX);
 
       int paletteIndex = paletteUpper | paletteLower;
       int priority = (basePriority == 0)
@@ -616,6 +616,11 @@ class PPU {
       // Specifies the sprites horizontal position on the screen (minus 8).
       // An offscreen value (X=0 or X>=168) hides the sprite, but the sprite still affects the priority ordering.
       int x = cpu.mmu.readOAM(i + 1) & 0xff;
+      
+      // Early exit if sprite is completely off-screen horizontally
+      if (x == 0 || x >= 168) {
+        continue;
+      }
 
       // Specifies the sprites Tile Number (00-FF). This (unsigned) value selects a tile from memory at 8000h-8FFFh.
       // In CGB Mode this could be either in VRAM Bank 0 or 1, depending on Bit 3 of the following int.
