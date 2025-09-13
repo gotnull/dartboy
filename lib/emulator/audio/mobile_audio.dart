@@ -13,7 +13,7 @@ class MobileAudio {
       _audioStreamController; // Single stream controller
 
   bool _initialized = false;
-  static const int sampleRate = 44100;
+  static const int sampleRate = 32768; // Match authentic Game Boy sample rate
   static const int bufferSize = 2048; // Larger buffer for smoother playback
 
   int _debugPrintCounter = 0;

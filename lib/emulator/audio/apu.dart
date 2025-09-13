@@ -158,11 +158,11 @@ ClearQueuedAudioDart get clearQueuedAudio {
 
 class APU {
   static const int frameSequencerRate = 512; // Hz
-  static const int defaultSampleRate = 44100;
+  static const int defaultSampleRate = 32768; // Authentic Game Boy rate (CPU/128)
   static const int defaultBufferSize = 1024;
   static const int defaultChannels = 2;
 
-  final int sampleRate = 44100;
+  final int sampleRate = 32768; // Much closer to original Game Boy
   final int bufferSize = 1024;
   final int channels = 2;
 
@@ -580,21 +580,21 @@ class APU {
     left = (left * (leftVolume + 1)) / 8.0;
     right = (right * (rightVolume + 1)) / 8.0;
 
-    // Apply high-pass filter for DC blocking (more accurate implementation)
-    const double alpha = 0.996; // ~20Hz cutoff at 44.1kHz
+    // Apply high-pass filter for DC blocking (Game Boy authentic)
+    const double alpha = 0.999; // ~5Hz cutoff for authentic Game Boy sound
     double leftFiltered = left - _leftHighPassState;
     _leftHighPassState += leftFiltered * (1 - alpha);
     double rightFiltered = right - _rightHighPassState;
     _rightHighPassState += rightFiltered * (1 - alpha);
 
-    // Apply simple low-pass anti-aliasing filter
-    const double lowPassAlpha = 0.75;
+    // Minimal low-pass filtering to preserve authentic Game Boy sound
+    const double lowPassAlpha = 0.95; // Much less aggressive filtering
     leftFiltered *= lowPassAlpha;
     rightFiltered *= lowPassAlpha;
 
-    // Scale to 16-bit range with proper headroom (slightly reduced for mobile)
-    // Game Boy DAC outputs values from -15 to +15, scale appropriately
-    const double scalingFactor = 800.0; // Reduced scaling for smoother mobile performance
+    // Scale to 16-bit range with authentic Game Boy characteristics
+    // Game Boy DAC outputs values from -15 to +15, scale authentically
+    const double scalingFactor = 512.0; // More authentic Game Boy volume levels
 
     int leftSample =
         (leftFiltered * scalingFactor).clamp(-32768, 32767).toInt();
