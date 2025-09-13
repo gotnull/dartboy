@@ -58,7 +58,7 @@ class Channel4 {
   }
 
   // NR44: Counter/Consecutive; Initial
-  int readNR44() => nr44 | 0xBF; // Only bit 6 readable, others write-only
+  int readNR44() => (nr44 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
   void writeNR44(int value) {
     bool wasLengthEnabled = lengthEnabled;
     nr44 = value;

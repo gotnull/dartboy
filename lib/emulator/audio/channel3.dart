@@ -29,7 +29,7 @@ class Channel3 {
   Channel3();
 
   // NR30: Sound ON/OFF
-  int readNR30() => nr30 | 0x7F; // Bit 7 is read-only
+  int readNR30() => (nr30 & 0x80) | 0x7F; // Only bit 7 readable, others read as 1
   void writeNR30(int value) {
     nr30 = value;
     dacEnabled = (nr30 & 0x80) != 0; // Bit 7 controls DAC
@@ -46,7 +46,7 @@ class Channel3 {
   }
 
   // NR32: Output Level
-  int readNR32() => nr32 | 0x9F; // Bits 0-4 are unused/read-only
+  int readNR32() => (nr32 & 0x60) | 0x9F; // Only bits 5-6 readable, others read as 1
   void writeNR32(int value) {
     nr32 = value;
     volumeShift = (nr32 >> 5) & 0x03;
@@ -60,7 +60,7 @@ class Channel3 {
   }
 
   // NR34: Frequency High and Control
-  int readNR34() => nr34 | 0xBF; // Only bit 6 readable, others write-only
+  int readNR34() => (nr34 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
   void writeNR34(int value) {
     bool wasLengthEnabled = lengthEnabled;
     nr34 = value;

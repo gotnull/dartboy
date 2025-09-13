@@ -227,6 +227,11 @@ class APU {
   int readNR(int address) {
     address &= 0xFFFF;
 
+    // Handle wave RAM reads first - always accessible regardless of APU power
+    if (address >= 0xFF30 && address <= 0xFF3F) {
+      return channel3.readWaveformRAM(address);
+    }
+
     switch (address) {
       case MemoryRegisters.nr10:
         return channel1.readNR10();
@@ -317,7 +322,13 @@ class APU {
       return;
     }
 
-    // If APU is off, ignore all writes except to NR52
+    // Handle wave RAM writes first - always accessible regardless of APU power
+    if (address >= 0xFF30 && address <= 0xFF3F) {
+      channel3.writeWaveformRAM(address, value);
+      return;
+    }
+
+    // If APU is off, ignore all writes except to NR52 and wave RAM
     if ((nr52 & 0x80) == 0) return;
 
     switch (address) {

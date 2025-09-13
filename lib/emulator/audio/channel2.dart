@@ -37,7 +37,7 @@ class Channel2 {
   Channel2();
 
   // NR21: Sound Length / Waveform Duty
-  int readNR21() => nr21 | 0x3F; // Bits 0-5 are write-only, read as 1
+  int readNR21() => (nr21 & 0xC0) | 0x3F; // Only bits 6-7 readable, bits 0-5 always 1
   void writeNR21(int value) {
     nr21 = value;
     dutyCycle = (nr21 >> 6) & 0x03;
@@ -67,7 +67,7 @@ class Channel2 {
   }
 
   // NR24: Frequency High and Control
-  int readNR24() => nr24 | 0xBF; // Only bit 6 readable, others write-only
+  int readNR24() => (nr24 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
   void writeNR24(int value) {
     bool wasLengthEnabled = lengthEnabled;
     nr24 = value;

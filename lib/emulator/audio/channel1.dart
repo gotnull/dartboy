@@ -46,7 +46,7 @@ class Channel1 {
   Channel1();
 
   // NR10: Sweep Register
-  int readNR10() => nr10 | 0x80; // Bit 7 is always read as 1
+  int readNR10() => (nr10 & 0x7F) | 0x80; // Only bits 0-6 writable, bit 7 always 1
   void writeNR10(int value) {
     nr10 = value;
     sweepPeriod = (nr10 >> 4) & 0x07;
@@ -56,7 +56,7 @@ class Channel1 {
   }
 
   // NR11: Sound Length / Waveform Duty
-  int readNR11() => nr11 | 0x3F; // Bits 0-5 are write-only, read as 1
+  int readNR11() => (nr11 & 0xC0) | 0x3F; // Only bits 6-7 readable, bits 0-5 always 1
   void writeNR11(int value) {
     nr11 = value;
     dutyCycle = (nr11 >> 6) & 0x03;
@@ -86,7 +86,7 @@ class Channel1 {
   }
 
   // NR14: Frequency High and Control
-  int readNR14() => nr14 | 0xBF; // Only bit 6 readable, others write-only
+  int readNR14() => (nr14 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
   void writeNR14(int value) {
     bool wasLengthEnabled = lengthEnabled;
     nr14 = value;
