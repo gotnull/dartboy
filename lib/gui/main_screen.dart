@@ -95,10 +95,14 @@ class MainScreenState extends State<MainScreen> {
       Modal.alert(
         context,
         'Error',
-        'Error: Could not load the "cpu_instrs.gb" ROM. Make sure the ROM exists in the "assets/roms" folder.',
+        'Error: Could not load the ROM. Make sure the ROM exists in the "assets/roms" folder.',
         onCancel: () => {},
       );
     }
+  }
+
+  Future<void> _loadTetrisDX() async {
+    await _debugFile("assets/roms/tetris_world_dx.gbc");
   }
 
   Future<void> _loadFile() async {
@@ -261,13 +265,19 @@ class MainScreenState extends State<MainScreen> {
         // Control buttons - compact row
         Container(
           padding: const EdgeInsets.all(8.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          child: Column(
             children: [
-              _buildCompactButton('Load', () => _loadFile()),
-              _buildCompactButton('Run', () => _runEmulator()),
-              _buildCompactButton('Pause', () => _pauseEmulator()),
-              _buildCompactButton('Reset', () => _resetEmulator()),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildCompactButton('Load', () => _loadFile()),
+                  _buildCompactButton('Run', () => _runEmulator()),
+                  _buildCompactButton('Pause', () => _pauseEmulator()),
+                  _buildCompactButton('Reset', () => _resetEmulator()),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildCompactButton('Debug: Tetris DX', () => _loadTetrisDX()),
             ],
           ),
         ),
@@ -326,14 +336,20 @@ class MainScreenState extends State<MainScreen> {
                     decoration: BoxDecoration(
                       border: Border.all(color: Colors.white),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    child: Column(
                       children: [
-                        MyRomMenu(onRomSelected: _onRomSelected),
-                        customButton(cpu: cpu, label: 'Load', onPressed: () => _loadFile()),
-                        customButton(cpu: cpu, label: 'Run', onPressed: () => _runEmulator()),
-                        customButton(cpu: cpu, label: 'Pause', onPressed: () => _pauseEmulator()),
-                        customButton(cpu: cpu, label: 'Reset', onPressed: () => _resetEmulator()),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            MyRomMenu(onRomSelected: _onRomSelected),
+                            customButton(cpu: cpu, label: 'Load', onPressed: () => _loadFile()),
+                            customButton(cpu: cpu, label: 'Run', onPressed: () => _runEmulator()),
+                            customButton(cpu: cpu, label: 'Pause', onPressed: () => _pauseEmulator()),
+                            customButton(cpu: cpu, label: 'Reset', onPressed: () => _resetEmulator()),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        customButton(cpu: cpu, label: 'Debug: Tetris DX', onPressed: () => _loadTetrisDX()),
                       ],
                     ),
                   ),

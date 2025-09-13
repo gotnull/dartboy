@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'dart:typed_data';
-import 'dart:math';
 
 import 'package:audio_session/audio_session.dart' as audio_session;
 import 'package:flutter_sound/flutter_sound.dart';
@@ -15,10 +14,15 @@ class MobileAudio {
 
   bool _initialized = false;
   static const int sampleRate = 44100;
+  static const int bufferSize = 1024; // Smaller buffer for lower latency
 
   int _debugPrintCounter = 0;
   DateTime? _debugPrintStartTime;
   static const int _debugPrintDurationSeconds = 2;
+  
+  // Buffer for accumulating samples before sending to stream
+  final List<int> _sampleBuffer = [];
+  static const int _bufferThreshold = 512; // Send in chunks
 
   /// Initialize iOS audio system
   Future<void> init() async {
@@ -42,9 +46,14 @@ class MobileAudio {
         codec: Codec.pcm16,
         numChannels: 2, // Stereo
         sampleRate: sampleRate,
-        bufferSize: 4096, // Example buffer size
+        bufferSize: bufferSize,
         interleaved: true, // Stereo data is typically interleaved
       );
+      
+      // Connect the stream controller to the player
+      _audioStreamController!.stream.listen((data) {
+        _mPlayer!.feedUint8FromStream(data);
+      });
       print('Stream player started for mixed audio.');
 
       _initialized = true;
@@ -55,40 +64,44 @@ class MobileAudio {
     }
   }
 
-  // For testing purposes: generate a simple sine wave
-  double _sinePhase = 0.0;
-  static const double _sineFrequency = 440.0; // Hz
-  static const double _sineAmplitude = 0.5; // 0.0 to 1.0
 
   void queueSample(int leftSample, int rightSample) {
     if (!_initialized) return;
 
-    // --- START TEST SINE WAVE GENERATION ---
-    final ByteData byteData = ByteData(4); // 2 samples * 2 bytes/sample
-    final double sampleValue = _sineAmplitude * sin(_sinePhase);
-    final int intSample =
-        (sampleValue * 32767).toInt(); // Scale to 16-bit signed range
-
-    byteData.setInt16(0, intSample, Endian.little);
-    byteData.setInt16(2, intSample, Endian.little); // Stereo
-
-    _sinePhase += (2 * pi * _sineFrequency) / sampleRate;
-    if (_sinePhase > 2 * pi) _sinePhase -= 2 * pi;
-    // --- END TEST SINE WAVE GENERATION ---
-
-    _audioStreamController!.add(byteData.buffer.asUint8List());
+    // Add samples to buffer (left, right)
+    _sampleBuffer.addAll([leftSample, rightSample]);
+    
+    // Send buffer when it reaches threshold
+    if (_sampleBuffer.length >= _bufferThreshold) {
+      _flushSampleBuffer();
+    }
 
     // Limit debug prints to the first 5 seconds
     _debugPrintStartTime ??= DateTime.now();
     if (DateTime.now().difference(_debugPrintStartTime!).inSeconds <
         _debugPrintDurationSeconds) {
-      print(
-          'Queued sample: L=$leftSample, R=$rightSample, isPlaying: ${_mPlayer!.isPlaying}');
+      if (_sampleBuffer.length % 100 == 0) { // Print every 100th sample to reduce spam
+        print(
+            'Buffer size: ${_sampleBuffer.length}, L=$leftSample, R=$rightSample, isPlaying: ${_mPlayer!.isPlaying}');
+      }
     } else if (_debugPrintCounter == 0) {
       print(
           'Queued sample prints limited to first $_debugPrintDurationSeconds seconds.');
       _debugPrintCounter++; // Ensure this message prints only once
     }
+  }
+
+  void _flushSampleBuffer() {
+    if (_sampleBuffer.isEmpty) return;
+    
+    // Convert int samples to bytes
+    final ByteData byteData = ByteData(_sampleBuffer.length * 2); // 2 bytes per sample
+    for (int i = 0; i < _sampleBuffer.length; i++) {
+      byteData.setInt16(i * 2, _sampleBuffer[i], Endian.little);
+    }
+    
+    _audioStreamController!.add(byteData.buffer.asUint8List());
+    _sampleBuffer.clear();
   }
 
   Future<void> startAudio() async {
@@ -98,6 +111,9 @@ class MobileAudio {
   }
 
   void stopAudio() {
+    // Flush any remaining samples before stopping
+    _flushSampleBuffer();
+    
     if (_mPlayer!.isPlaying) {
       _mPlayer!.stopPlayer();
     }
