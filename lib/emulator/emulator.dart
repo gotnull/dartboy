@@ -184,7 +184,7 @@ class Emulator {
 
     state = EmulatorState.running;
 
-    // FPS target and timing
+    // FPS target and timing - be more aggressive on mobile
     const int frameTimeMicros = 16667; // 1000000 / 60 microseconds per frame
 
     // Track performance
@@ -220,22 +220,23 @@ class Emulator {
             totalCyclesExecuted = 0;
           }
 
-          // Frame rate limiting - maintain stable 60 FPS
+          // Frame rate limiting - maintain stable 60 FPS but be flexible on mobile
           int frameEndTime = frameTimer.elapsedMicroseconds;
           int timeUntilNextFrame = nextFrameTime - frameEndTime;
 
-          if (timeUntilNextFrame > 0 &&
-              timeUntilNextFrame < frameTimeMicros * 2) {
-            // Delay to maintain 60 FPS, but not if we're too far behind
-            await Future.delayed(Duration(microseconds: timeUntilNextFrame));
+          if (timeUntilNextFrame > 1000 &&
+              timeUntilNextFrame < frameTimeMicros * 3) {
+            // Only delay if we have meaningful time left and aren't too far behind
+            // Use shorter delays on mobile for better responsiveness
+            await Future.delayed(Duration(microseconds: timeUntilNextFrame ~/ 2));
           }
 
           // Schedule next frame, accounting for any lag
           nextFrameTime += frameTimeMicros;
           int currentTime = frameTimer.elapsedMicroseconds;
-          if (nextFrameTime < currentTime) {
-            // We're running behind, catch up gradually
-            nextFrameTime = currentTime + (frameTimeMicros ~/ 4);
+          if (nextFrameTime < currentTime - frameTimeMicros) {
+            // We're running significantly behind, reset timing
+            nextFrameTime = currentTime + frameTimeMicros;
           }
         } catch (e, s) {
           Debugger().getLogs().forEach((log) => print(log));
