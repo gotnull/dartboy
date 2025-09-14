@@ -12,8 +12,11 @@ A cross-platform GameBoy and GameBoy Color emulator built with [Flutter](https:/
 
 ## Roadmap
 
+- [✅] MBC1 memory bank controller support
+- [✅] MBC2 memory bank controller support (basic implementation)
+- [✅] MBC3 memory bank controller support
+- [✅] MBC5 memory bank controller support
 - [❌] Battery-backed save file support (.sav files)
-- [❌] MBC2 memory bank controller support
 - [✅] Audio emulation (recently improved)
 - [❌] Timing accuracy improvements
 
