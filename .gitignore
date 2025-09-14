@@ -4,6 +4,7 @@
 lib/generated_plugin_registrant.dart
 build/
 assets/roms/
+rom_manifest.json
 
 # Prerequisites
 *.d
