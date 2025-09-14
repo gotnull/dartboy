@@ -122,7 +122,7 @@ class LCDPainter extends CustomPainter {
           ..style = PaintingStyle.fill;
 
         // Draw horizontal scanlines every other line
-        for (int y = 0; y < height; y += 1) {
+        for (int y = 0; y < height; y += 2) {
           double scanlineY = offsetY + y * scale;
           canvas.drawRect(
             Rect.fromLTWH(offsetX, scanlineY, scaledWidth, scale),
