@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:dartboy/emulator/cpu/cpu.dart';
 import 'package:dartboy/emulator/emulator.dart';
+import 'package:dartboy/emulator/memory/cartridge.dart';
 import 'package:dartboy/emulator/memory/gamepad.dart';
 import 'package:dartboy/gui/lcd.dart';
 import 'package:dartboy/gui/modal.dart';
@@ -28,6 +29,7 @@ class MainScreen extends StatefulWidget {
   static bool debugEnabled = false;
   static bool wasPaused = false;
   static Uint8List? currentRomData;
+  static String? currentRomName;
 
   @override
   MainScreenState createState() => MainScreenState();
@@ -84,7 +86,7 @@ class MainScreenState extends State<MainScreen> {
     hudUpdateTimer?.cancel();
   }
 
-  Future<void> _debugFile(String? value) async {
+  Future<void> _debugFile(String? value, [String? romName]) async {
     try {
       _resetEmulator();
       ByteData romData = await rootBundle.load(value ?? "cpu_instrs.gb");
@@ -93,6 +95,7 @@ class MainScreenState extends State<MainScreen> {
       if (!mounted) return;
 
       MainScreen.currentRomData = romBytes;
+      MainScreen.currentRomName = romName;
       MainScreen.emulator.loadROM(romBytes);
       MainScreen.emulator.state = EmulatorState.ready;
       _startEmulator();
@@ -242,7 +245,7 @@ class MainScreenState extends State<MainScreen> {
                               isTestRom: rom.isTestRom,
                               onTap: () {
                                 Navigator.pop(context);
-                                _debugFile(rom.path);
+                                _debugFile(rom.path, rom.name);
                               },
                             );
                           },
@@ -268,6 +271,23 @@ class MainScreenState extends State<MainScreen> {
     if (result != null && result.files.single.bytes != null) {
       _resetEmulator();
       MainScreen.currentRomData = result.files.single.bytes!;
+
+      // Extract ROM name from cartridge data
+      try {
+        final cartridge = Cartridge();
+        cartridge.load(result.files.single.bytes!);
+        String cartridgeName = cartridge.name.replaceAll(RegExp(r'[^\x20-\x7E]'), '').trim();
+        if (cartridgeName.isEmpty) {
+          // Use filename as fallback
+          String fileName = result.files.single.name;
+          cartridgeName = fileName.replaceAll(RegExp(r'\.(gb|gbc)$'), '');
+        }
+        MainScreen.currentRomName = cartridgeName;
+      } catch (e) {
+        // Fallback to filename if cartridge loading fails
+        MainScreen.currentRomName = result.files.single.name.replaceAll(RegExp(r'\.(gb|gbc)$'), '');
+      }
+
       MainScreen.emulator.loadROM(result.files.single.bytes!);
       MainScreen.emulator.state = EmulatorState.ready;
       _startEmulator();
@@ -510,7 +530,8 @@ class MainScreenState extends State<MainScreen> {
         const SizedBox(width: 8),
         _IOSButton(
           icon: Icons.library_books_rounded,
-          onPressed: _showRomSelection,
+          onPressed: (isLoadingRoms || isRefreshingRoms) ? null : _showRomSelection,
+          isLoading: isLoadingRoms || isRefreshingRoms,
         ),
       ],
     );
@@ -1111,9 +1132,19 @@ class MainScreenState extends State<MainScreen> {
       case EmulatorState.waiting:
         return 'Ready to load ROM';
       case EmulatorState.ready:
-        return MainScreen.wasPaused ? 'ROM paused' : 'ROM loaded';
+        if (MainScreen.currentRomName != null) {
+          return MainScreen.wasPaused
+              ? 'Paused: ${MainScreen.currentRomName}'
+              : 'Loaded: ${MainScreen.currentRomName}';
+        } else {
+          return MainScreen.wasPaused ? 'ROM paused' : 'ROM loaded';
+        }
       case EmulatorState.running:
-        return 'Running at ${MainScreen.emulator.fps.toStringAsFixed(1)} FPS';
+        if (MainScreen.currentRomName != null) {
+          return 'Playing: ${MainScreen.currentRomName}';
+        } else {
+          return 'Running at ${MainScreen.emulator.fps.toStringAsFixed(1)} FPS';
+        }
     }
   }
 
@@ -1192,11 +1223,13 @@ class MainScreenState extends State<MainScreen> {
 
 class _IOSButton extends StatelessWidget {
   final IconData icon;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
+  final bool isLoading;
 
   const _IOSButton({
     required this.icon,
     required this.onPressed,
+    this.isLoading = false,
   });
 
   @override
@@ -1210,11 +1243,20 @@ class _IOSButton extends StatelessWidget {
           color: const Color(0xFF2C2C2E),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Icon(
-          icon,
-          color: const Color(0xFF007AFF),
-          size: 16,
-        ),
+        child: isLoading
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFF007AFF),
+                ),
+              )
+            : Icon(
+                icon,
+                color: const Color(0xFF007AFF),
+                size: 16,
+              ),
       ),
     );
   }

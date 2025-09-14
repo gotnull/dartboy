@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-09-14T19:34:01.381908",
+  "generated_at": "2025-09-14T19:44:35.407065",
   "rom_files": [
     "assets/roms/drmario.gb",
     "assets/roms/kirbys_dreamland.gb",
@@ -40,7 +40,6 @@
     "assets/roms/mooneye/oam_dma/basic.gb",
     "assets/roms/mooneye/oam_dma/reg_read.gb",
     "assets/roms/pokemon_gold.gbc",
-    "assets/roms/dr_mario_world.gb",
     "assets/roms/donkey_kong_country.gbc",
     "assets/roms/smb_deluxe.gbc",
     "assets/roms/tetris_world_dx.gbc",
