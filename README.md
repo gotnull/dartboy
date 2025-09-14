@@ -2,6 +2,10 @@
 
 A high-performance GameBoy and GameBoy Color emulator built with Flutter and Dart.
 
+![Screenshot 2024-10-15 at 4 45 35 pm](https://github.com/user-attachments/assets/d512eb2a-b78e-4ab9-aaa5-dd26747c0ec0)
+![Screenshot 2024-10-15 at 4 46 56 pm](https://github.com/user-attachments/assets/15772943-c4ce-4ce0-85f2-5ef38b3b6774)
+![Screenshot 2024-10-15 at 4 47 53 pm](https://github.com/user-attachments/assets/e787f733-f498-41f6-910a-8939b78f117b)
+
 ## Features
 
 - **Complete CPU Emulation**: Full Sharp LR35902 instruction set implementation
