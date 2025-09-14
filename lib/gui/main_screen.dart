@@ -5,6 +5,7 @@ import 'package:dartboy/emulator/emulator.dart';
 import 'package:dartboy/emulator/memory/gamepad.dart';
 import 'package:dartboy/gui/lcd.dart';
 import 'package:dartboy/gui/modal.dart';
+import 'package:dartboy/utils/rom_manager.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -35,11 +36,34 @@ class MainScreen extends StatefulWidget {
 class MainScreenState extends State<MainScreen> {
   Timer? hudUpdateTimer;
   final Set<LogicalKeyboardKey> _pressedKeys = <LogicalKeyboardKey>{};
+  List<RomInfo> availableRoms = [];
+  bool isLoadingRoms = true;
+  bool isRefreshingRoms = false;
 
   @override
   void initState() {
     super.initState();
     _startHudUpdateTimer();
+    _loadAvailableRoms();
+  }
+
+  Future<void> _loadAvailableRoms() async {
+    try {
+      final roms = await RomManager.getAvailableRoms();
+      if (mounted) {
+        setState(() {
+          availableRoms = roms;
+          isLoadingRoms = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading ROMs: $e');
+      if (mounted) {
+        setState(() {
+          isLoadingRoms = false;
+        });
+      }
+    }
   }
 
   @override
@@ -84,22 +108,6 @@ class MainScreenState extends State<MainScreen> {
     }
   }
 
-  static const Map<String, String> popularRoms = {
-    'Tetris DX': 'assets/roms/tetris_world_dx.gbc',
-    'Tetris': 'assets/roms/tetris.gb',
-    'Dr. Mario': 'assets/roms/drmario.gb',
-    'Kirby\'s Dream Land': 'assets/roms/kirbys_dreamland.gb',
-    'Pokémon Gold': 'assets/roms/pokemon_gold.gbc',
-    'RodLand': 'assets/roms/Rodland (Europe).gb',
-    'Robocop': 'assets/roms/Robocop (U) (M6) [C][!].gbc',
-    'Pokémon Yellow': 'assets/roms/pokemon_yellow.gbc',
-    'Zelda: Link\'s Awakening':
-        'assets/roms/legend_of_zelda_links_awakening.gbc',
-    'Metal Gear Solid': 'assets/roms/Metal Gear Solid (USA).gbc',
-    'Donkey Kong Country': 'assets/roms/donkey_kong_country.gbc',
-    'Dragon Warrior Monsters': 'assets/roms/dragon_warrior_monsters.gbc',
-    'Super Mario Bros Deluxe': 'assets/roms/smb_deluxe.gbc',
-  };
 
   void _showRomSelection() {
     showModalBottomSheet(
@@ -143,8 +151,41 @@ class MainScreenState extends State<MainScreen> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Text(
-                      '${popularRoms.length} games',
+                      '${availableRoms.length} games',
                       style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Refresh button
+                  GestureDetector(
+                    onTap: () async {
+                      setState(() => isRefreshingRoms = true);
+                      await RomManager.refreshRomList();
+                      await _loadAvailableRoms();
+                      if (mounted) {
+                        setState(() => isRefreshingRoms = false);
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2C2C2E),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: isRefreshingRoms
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF007AFF),
+                              ),
+                            )
+                          : const Icon(
+                              Icons.refresh_rounded,
+                              color: Color(0xFF007AFF),
+                              size: 16,
+                            ),
                     ),
                   ),
                 ],
@@ -155,27 +196,57 @@ class MainScreenState extends State<MainScreen> {
 
             // Game List
             Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: popularRoms.length,
-                separatorBuilder: (context, index) =>
-                    const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  String romName = popularRoms.keys.elementAt(index);
-                  String romPath = popularRoms.values.elementAt(index);
-                  bool isGBC = romPath.contains('.gbc');
-
-                  return _GameTile(
-                    title: romName,
-                    subtitle: isGBC ? 'Game Boy Color' : 'Game Boy',
-                    isGBC: isGBC,
-                    onTap: () {
-                      Navigator.pop(context);
-                      _debugFile(romPath);
-                    },
-                  );
-                },
-              ),
+              child: (isLoadingRoms && availableRoms.isEmpty)
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF007AFF),
+                      ),
+                    )
+                  : availableRoms.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.videogame_asset_off_rounded,
+                                size: 64,
+                                color: const Color(0xFF8E8E93).withValues(alpha: 0.5),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No ROMs found',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  color: const Color(0xFF8E8E93),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Add ROM files to the assets/roms folder',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: availableRoms.length,
+                          separatorBuilder: (context, index) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final rom = availableRoms[index];
+                            return _GameTile(
+                              title: rom.name,
+                              subtitle: rom.platform,
+                              isGBC: rom.platform.contains('Color'),
+                              isTestRom: rom.isTestRom,
+                              onTap: () {
+                                Navigator.pop(context);
+                                _debugFile(rom.path);
+                              },
+                            );
+                          },
+                        ),
             ),
 
             // Bottom padding
@@ -1153,6 +1224,7 @@ class _GameTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool isGBC;
+  final bool isTestRom;
   final VoidCallback onTap;
 
   const _GameTile({
@@ -1160,6 +1232,7 @@ class _GameTile extends StatelessWidget {
     required this.subtitle,
     required this.isGBC,
     required this.onTap,
+    this.isTestRom = false,
   });
 
   @override
@@ -1178,12 +1251,13 @@ class _GameTile extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color:
-                    isGBC ? const Color(0xFF007AFF) : const Color(0xFF8E8E93),
+                color: isTestRom
+                    ? const Color(0xFFFF9500)
+                    : (isGBC ? const Color(0xFF007AFF) : const Color(0xFF8E8E93)),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(
-                Icons.videogame_asset_rounded,
+              child: Icon(
+                isTestRom ? Icons.bug_report_rounded : Icons.videogame_asset_rounded,
                 color: Colors.white,
                 size: 20,
               ),

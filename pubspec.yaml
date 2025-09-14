@@ -38,6 +38,7 @@ dependencies:
   ffi: ^2.1.3
   audio_session: ^0.1.21
   flutter_sound: ^9.2.13
+  shared_preferences: ^2.2.2
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -73,6 +74,8 @@ flutter:
     - assets/roms/blargg/instr_timing/
     - assets/roms/mooneye/
     - assets/roms/mooneye/oam_dma/
+    - assets/roms/development/
+    - assets/rom_manifest.json
     - assets/instructions/opcodes.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
