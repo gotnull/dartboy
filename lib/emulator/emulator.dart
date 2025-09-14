@@ -1,5 +1,6 @@
 import 'package:dartboy/emulator/debugger.dart';
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dartboy/emulator/configuration.dart';
@@ -52,17 +53,30 @@ class Emulator {
 
     await printCartridgeInfo();
 
-    print("Available Controllers:");
-    final gamepads = Gamepads.list();
-    gamepads.then((List<GamepadController> controllers) {
-      for (GamepadController controller in controllers) {
-        print("[${controller.id}] ${controller.name}");
+    // Skip gamepad initialization on Android due to plugin issues
+    if (!Platform.isAndroid) {
+      print("Available Controllers:");
+      try {
+        final gamepads = Gamepads.list();
+        gamepads.then((List<GamepadController> controllers) {
+          for (GamepadController controller in controllers) {
+            print("[${controller.id}] ${controller.name}");
+          }
+        });
+      } catch (e) {
+        print("Error listing gamepads: $e");
       }
-    });
 
-    Gamepads.events.listen(
-      (GamepadEvent event) => onGamepadEvent(event),
-    );
+      try {
+        Gamepads.events.listen(
+          (GamepadEvent event) => onGamepadEvent(event),
+        );
+      } catch (e) {
+        print("Error setting up gamepad event listener: $e");
+      }
+    } else {
+      print("Gamepad support disabled on Android");
+    }
 
     // Start recording audio when the ROM is loaded
     cpu?.apu.init();
