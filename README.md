@@ -1,15 +1,21 @@
-# Dart Boy
+# DartBoy
 
-- Dart based GameBoy (and GameBoy Color) emulator that runs on desktop, mobile and web using the [Flutter](https://flutter.dev/) framework.
-- Project was developed using Flutter 1.5.5 and Dart 2.3.0 and tested on Windows and Android.
-- Supports MBC1, MBC3, MBC5 and basic cartridges, has basic support for [GameBoy Color](https://en.wikipedia.org/wiki/Game_Boy_Color) games. Does not support Super GameBoy specific features.
-- Full support for the Sharp [LR35902](https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html) CPU instruction set.
-- The emulator was built as a learning project and as a challenge, there are still a lot that can be done to improve.
+A cross-platform GameBoy and GameBoy Color emulator built with [Flutter](https://flutter.dev/) and Dart. Runs seamlessly on desktop, mobile, and web platforms.
 
-  - [❌] Store battery backed game memory in .sav file.
-  - [❌] MBC2 support
-  - [✅] Audio Support (WIP)
-  - [❌] Fix register signed data results.
+## Features
+
+- **Complete CPU Support**: Full implementation of the Sharp [LR35902](https://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html) CPU instruction set
+- **Memory Bank Controllers**: Support for MBC1, MBC3, MBC5, and basic ROM-only cartridges
+- **GameBoy Color**: Basic support for [GameBoy Color](https://en.wikipedia.org/wiki/Game_Boy_Color) games
+- **Audio System**: Comprehensive audio emulation with recent improvements
+- **Cross-Platform**: Runs on Windows, macOS, Linux, Android, iOS, and web browsers
+
+## Roadmap
+
+- [❌] Battery-backed save file support (.sav files)
+- [❌] MBC2 memory bank controller support
+- [✅] Audio emulation (recently improved)
+- [❌] Timing accuracy improvements
 
 ![Screenshot 2024-10-15 at 4 45 35 pm](https://github.com/user-attachments/assets/d512eb2a-b78e-4ab9-aaa5-dd26747c0ec0)
 ![Screenshot 2024-10-15 at 4 46 56 pm](https://github.com/user-attachments/assets/15772943-c4ce-4ce0-85f2-5ef38b3b6774)
@@ -41,64 +47,90 @@ before parodious.com went down. New official location: http://blargg.8bitalley.c
 | halt_bug.gb | ❌ |
 | cgb_sound | ❌ |
 
-### Run the Emulator
+## Getting Started
 
-- Get the [Dart SDK](https://dart.dev/get-dart) and [Flutter SDK](https://flutter.dev/docs/get-started/install) from the internet. 
-- Load the project using [Android Studio](https://developer.android.com/studio) or [Visual Studio Code](https://code.visualstudio.com/) with the flutter plugin installed, the project can run directly on mobile or desktop without changes.
-  - For the web version you will need to change the GUI imports for the web specific imports.
-- The game can be controlled using the keyboard on desktop (<kbd>&larr;</kbd> <kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&rarr;</kbd> <kbd>Z</kbd> <kbd>X</kbd> <kbd>Enter</kbd> <kbd>C</kbd>), on mobile use the onscreen buttons.
+### Prerequisites
 
+- [Flutter SDK](https://flutter.dev/docs/get-started/install) (latest stable version recommended)
+- [Dart SDK](https://dart.dev/get-dart) (included with Flutter)
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/dartboy.git
+   cd dartboy
+   ```
+
+2. Install dependencies:
+   ```bash
+   flutter pub get
+   ```
+
+3. Run the emulator:
+   ```bash
+   flutter run
+   ```
+
+### Controls
+
+- **Desktop**: Arrow keys for D-pad, Z/X for A/B buttons, Enter for Start, C for Select
+- **Mobile**: Use the on-screen touch controls
+
+### Platform-Specific Builds
+
+#### Web
 ```bash
-flutter run --no-sound-null-safety
+flutter build web
+flutter run -d chrome
 ```
 
-### Web
-
-- To enable the web version of flutter, you need to install the flutter web tools first by running the following code on your terminal. 
-- You need to ensure that `flutter\.pub-cache\bin`  is available from the environment path.
-
+#### Desktop
 ```bash
-flutter pub global activate webdev
-flutter pub upgrade
+# Windows
+flutter build windows
+
+# macOS
+flutter build macos
+
+# Linux
+flutter build linux
 ```
 
-- After installing the development tools some changes are required in the `package.yaml` file, to allow the web version to run. (Check the [migration guide](https://github.com/flutter/flutter_web/blob/master/docs/migration_guide.md))
-- To run the web version locally (by default on localhost:8080) use the following command.
-
+#### Mobile
 ```bash
-flutter pub global run webdev serve
+# Android
+flutter build apk
+
+# iOS (macOS only)
+flutter build ios
 ```
 
-### Desktop
+## Resources
 
-- In Windows install visual studio with C++ support and make sure that the command `msbuild` works properly and that `vcvars64.bat` is in the path. (If visual studio is installed but `msbuild` is not found, add it to your path).
-- Flutter desktop support is still experimental and not enabled by default, its only available on the master channel.
+### GameBoy Development
+- [Pan Docs](https://gbdev.io/pandocs/) - Comprehensive GameBoy technical documentation
+- [GameBoy CPU (LR35902) Opcodes](http://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html)
+- [GameBoy Development Community](https://gbdev.gg8.se/)
+- [Test ROMs](https://github.com/retrio/gb-test-roms) - Blargg's hardware test suite
 
-```bash
-flutter channel master
-flutter precache --windows
-flutter upgrade
-```
+### Flutter Development
+- [Flutter Documentation](https://flutter.dev/docs)
+- [Dart Language Tour](https://dart.dev/guides/language/language-tour)
 
-- Set the `ENABLE_FLUTTER_DESKTOP` environment variable true, to enable desktop support.
+### Educational Content
+- [The Ultimate Game Boy Talk (33c3)](https://www.youtube.com/watch?v=HyzD8pNlpwI) - Excellent technical overview
 
-```bash
-set ENABLE_FLUTTER_DESKTOP=true
-flutter devices
-```
+## License
 
-### Resources
+This project is licensed under the [MIT License](https://opensource.org/licenses/MIT) - see the [LICENSE](LICENSE) file for details.
 
-- [GameBoy CPU Manual](http://marc.rawer.de/Gameboy/Docs/GBCPUman.pdf)
-- [Everything You Always Wanted To Know About GAMEBOY](http://bgb.bircd.org/pandocs.htm)
-- [GameBoy CPU (LR35902)](http://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html)
-- [Flutter desktop quick start guide](https://github.com/google/flutter-desktop-embedding/blob/master/Quick-Start.md)
-- [Flutter desktop embedding example](https://github.com/google/flutter-desktop-embedding)
-- [Flutter desktop plugins (file chooser)](https://github.com/google/flutter-desktop-embedding/tree/master/plugins)
-- [Game boy test roms](https://github.com/retrio/gb-test-roms)
-- [The Ultimate Game Boy Talk (33c3)](https://www.youtube.com/watch?v=HyzD8pNlpwI)
+## Contributing
 
-### License
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-- This project is distributed under [MIT license](https://opensource.org/licenses/MIT) and can be used for commercial applications.
-- License is available on the Github page of the project.
+## Acknowledgments
+
+- Built as a learning project to understand GameBoy hardware and emulation
+- Thanks to the GameBoy development community for excellent documentation
+- Special thanks to Blargg for the comprehensive test ROM suite

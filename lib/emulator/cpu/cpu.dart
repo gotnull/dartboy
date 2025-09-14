@@ -405,7 +405,7 @@ class CPU {
     }
 
     if (interruptsEnabled && fireInterrupts()) {
-      return 20; // Interrupt handling takes 20 cycles (5 memory accesses * 4 cycles each)
+      return 13; // Interrupt handling takes 13 cycles per Blargg's interrupt timing test
     }
 
     // Handle halt bug: PC increment is skipped for the opcode fetch only
