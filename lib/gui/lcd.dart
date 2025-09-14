@@ -43,8 +43,8 @@ class LCDPainter extends CustomPainter {
       final cpu = MainScreen.emulator.cpu;
       if (cpu == null) {
         // Draw black screen if no CPU
-        canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), 
-                       Paint()..color = Colors.black);
+        canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height),
+            Paint()..color = Colors.black);
         return;
       }
 
@@ -52,12 +52,12 @@ class LCDPainter extends CustomPainter {
 
       const int width = PPU.lcdWidth;
       const int height = PPU.lcdHeight;
-      
+
       // Additional safety checks
       if (cpu.ppu.current.isEmpty || cpu.ppu.current.length < width * height) {
         // Draw green screen as fallback if buffer is invalid
-        canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), 
-                       Paint()..color = Colors.green);
+        canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height),
+            Paint()..color = Colors.green);
         drawing = false;
         return;
       }
@@ -66,11 +66,11 @@ class LCDPainter extends CustomPainter {
       double scaleX = size.width / width;
       double scaleY = size.height / height;
       double scale = scaleX < scaleY ? scaleX : scaleY;
-      
+
       // Prevent invalid scaling
       if (scale <= 0 || !scale.isFinite) {
-        canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), 
-                       Paint()..color = Colors.red);
+        canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height),
+            Paint()..color = Colors.red);
         drawing = false;
         return;
       }
@@ -83,19 +83,19 @@ class LCDPainter extends CustomPainter {
 
       // Group pixels by color for batch drawing
       final Map<int, List<Rect>> colorGroups = {};
-      
+
       for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
           int index = x + y * width;
           if (index >= 0 && index < cpu.ppu.current.length) {
             int colorValue = cpu.ppu.current[index];
-            
+
             // Calculate scaled pixel position
             double pixelX = offsetX + x * scale;
             double pixelY = offsetY + y * scale;
-            
+
             Rect pixelRect = Rect.fromLTWH(pixelX, pixelY, scale, scale);
-            
+
             colorGroups.putIfAbsent(colorValue, () => []).add(pixelRect);
           }
         }
@@ -103,15 +103,33 @@ class LCDPainter extends CustomPainter {
 
       // Draw all rectangles of the same color at once
       colorGroups.forEach((colorValue, rects) {
-        Paint paint = _paintCache.putIfAbsent(colorValue, () => Paint()
-          ..style = PaintingStyle.fill
-          ..color = ColorConverter.toColor(colorValue)
-          ..isAntiAlias = false);
+        Paint paint = _paintCache.putIfAbsent(
+            colorValue,
+            () => Paint()
+              ..style = PaintingStyle.fill
+              ..color = ColorConverter.toColor(colorValue)
+              ..isAntiAlias = false);
 
         for (Rect rect in rects) {
           canvas.drawRect(rect, paint);
         }
       });
+
+      // Draw scanline overlay if enabled
+      if (MainScreen.scanlineEnabled) {
+        final scanlinePaint = Paint()
+          ..color = Colors.black.withValues(alpha: 0.3)
+          ..style = PaintingStyle.fill;
+
+        // Draw horizontal scanlines every other line
+        for (int y = 0; y < height; y += 1) {
+          double scanlineY = offsetY + y * scale;
+          canvas.drawRect(
+            Rect.fromLTWH(offsetX, scanlineY, scaledWidth, scale),
+            scanlinePaint,
+          );
+        }
+      }
 
       drawing = false;
     } catch (e) {
@@ -119,11 +137,10 @@ class LCDPainter extends CustomPainter {
       print('LCD render error: $e');
       drawing = false;
       // Draw error screen
-      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), 
-                     Paint()..color = Colors.orange);
+      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height),
+          Paint()..color = Colors.orange);
     }
   }
-
 
   @override
   bool shouldRepaint(covariant LCDPainter oldDelegate) {
