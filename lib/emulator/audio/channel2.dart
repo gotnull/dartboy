@@ -46,7 +46,7 @@ class Channel2 {
   }
 
   // NR22: Volume Envelope
-  int readNR22() => nr22;
+  int readNR22() => nr22; // Returns stored value per KameBoyColor
   void writeNR22(int value) {
     nr22 = value;
     volume = (nr22 >> 4) & 0x0F;
@@ -69,23 +69,35 @@ class Channel2 {
   // NR24: Frequency High and Control
   int readNR24() => (nr24 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
   void writeNR24(int value) {
-    bool wasLengthEnabled = lengthEnabled;
+    bool lengthEnable = (value & 0x40) != 0;
     nr24 = value;
-    lengthEnabled = (nr24 & 0x40) != 0;
+
     frequency = (nr24 & 0x07) << 8 | nr23;
     updateFrequencyTimer();
-    
-    // Length counter extra clocking when enabling length
-    if (!wasLengthEnabled &&
-        lengthEnabled &&
-        lengthCounter > 0 &&
-        (frameSequencer & 1) == 0) {
-      lengthCounter--;
-      if (lengthCounter == 0) {
-        enabled = false;
+
+    // KameBoyColor obscure behavior: Length counter extra clocking
+    bool nextStepDoesntUpdate = (frameSequencer & 1) == 0;
+    if (nextStepDoesntUpdate) {
+      if (lengthEnable && !lengthEnabled && lengthCounter > 0) {
+        lengthCounter--;
+        if (lengthCounter == 0) {
+          enabled = false;
+        }
       }
     }
-    
+
+    // More obscure behavior from KameBoyColor
+    if ((value & 0x80) != 0 && lengthEnabled && lengthCounter == 64) {
+      lengthCounter--;
+    }
+
+    // Blargg test 2 behavior
+    if ((value & 0x80) != 0 && lengthCounter == 0) {
+      lengthCounter = 64;
+    }
+
+    lengthEnabled = lengthEnable;
+
     if ((nr24 & 0x80) != 0) {
       trigger();
     }
@@ -100,52 +112,56 @@ class Channel2 {
 
 
     if (enabled) {
-      // Reset frequency timer with initial period
+      // Reset frequency timer - back to working formula
       frequencyTimer = 4 * (2048 - frequency);
 
-      // Pan Docs: "duty step is reset to 0" (starts outputting low)
+      // KameBoyColor: waveform_idx starts at 0
       dutyStep = 0;
 
-      // Reset envelope
-      envelopeTimer = envelopePeriod;
+      // Reset envelope - KameBoyColor behavior
+      envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
       volume = (nr22 >> 4) & 0x0F; // Initial volume from NR22 bits 4-7
 
       // Length counter handling
       if (lengthCounter == 0) {
         lengthCounter = 64; // Full length
-        // Extra clocking if frame sequencer is about to clock length
+        // Extra clocking if length enabled during length-clocking steps
         if (lengthEnabled && (frameSequencer & 1) == 0) {
           lengthCounter--;
-          if (lengthCounter == 0) enabled = false;
+          if (lengthCounter == 0) {
+            enabled = false;
+          }
         }
       }
     }
   }
 
-  // Update the frequency timer based on the current frequency
+  // Update frequency timer - back to working formula
   void updateFrequencyTimer() {
-    frequencyTimer = (2048 - frequency) * 4;
-    if (frequencyTimer <= 0) frequencyTimer = 4; // Ensure minimum period
+    frequencyTimer = 4 * (2048 - frequency);
+    if (frequencyTimer <= 0) frequencyTimer = 4;
   }
 
-  // Update method called every CPU cycle - cycle accurate per Pan Docs
+  // Frequency timer - back to DOWN counting to avoid lockups
   void tick(int cycles) {
     if (!enabled) return;
 
-    // Frequency timer decrements every CPU cycle
-    // Period = 4 * (2048 - frequency) CPU cycles
-    // Duty step advances when timer reaches 0
+    // Back to DOWN counting but with correct period calculation
     frequencyTimer -= cycles;
-    while (frequencyTimer <= 0) {
-      // Calculate the reload period
+    int loopCount = 0;
+    while (frequencyTimer <= 0 && loopCount < 1000) { // Safety limit to prevent infinite loops
+      // KameBoyColor waveform advance logic
+      if (dutyStep == 8) {
+        dutyStep = 1;
+      } else {
+        dutyStep++;
+      }
+
+      // Use proper Game Boy frequency formula
       int period = 4 * (2048 - frequency);
-      if (period <= 0) period = 4; // Minimum period to prevent locks
-
-      // Reload timer
+      if (period <= 0) period = 4;
       frequencyTimer += period;
-
-      // Advance duty step (Pan Docs: "duty step counter advances")
-      dutyStep = (dutyStep + 1) % 8;
+      loopCount++;
     }
   }
 
@@ -159,22 +175,21 @@ class Channel2 {
     }
   }
 
-  // Update envelope (called by frame sequencer)
+  // Update envelope - matches KameBoyColor exactly (lines 598-611)
   void updateEnvelope() {
-    if (envelopePeriod > 0 && enabled) {
+    // KameBoyColor checks volume_pace != 0
+    if (envelopePeriod != 0 && enabled) {
       envelopeTimer--;
       if (envelopeTimer <= 0) {
-        envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
-        if (envelopeIncrease && volume < 15) {
+        envelopeTimer = envelopePeriod;
+        if (envelopeIncrease) {
           volume++;
-        } else if (!envelopeIncrease && volume > 0) {
-          volume--;
+        } else {
+          if (volume != 0) {
+            volume--;
+          }
         }
-
-        // Disable envelope if volume reaches boundary
-        if (volume == 0 || volume == 15) {
-          envelopeTimer = 0;
-        }
+        volume &= 0x0F; // KameBoyColor line 610
       }
     }
   }
@@ -185,11 +200,12 @@ class Channel2 {
     // If channel or DAC is disabled, output 0
     if (!enabled || !dacEnabled) return 0;
 
-    // Get current duty pattern bit
-    int dutyBit = dutyPatterns[dutyCycle][dutyStep];
+    // Safe duty pattern indexing - ensure index is always 0-7
+    int index = (dutyStep - 1) % 8;
+    if (index < 0) index = 7; // Handle dutyStep = 0 case
+    int dutyBit = dutyPatterns[dutyCycle][index];
 
     // Output volume when duty is high, 0 when low
-    // This produces the correct square wave with proper amplitude
     return dutyBit == 1 ? volume : 0;
   }
 
@@ -214,9 +230,15 @@ class Channel2 {
 
   // Frame sequencer reference (needs to be set from Audio class)
   int frameSequencer = 0;
+  int frameSequencerCycles = 0;
 
   // Set frame sequencer value (called from Audio class)
   void setFrameSequencer(int value) {
     frameSequencer = value;
+  }
+
+  // Set frame sequencer cycles (called from Audio class)
+  void setFrameSequencerCycles(int value) {
+    frameSequencerCycles = value;
   }
 }

@@ -290,13 +290,13 @@ class CPU {
       
       _apuUpdateCounter++;
       if (_apuUpdateCounter >= Configuration.apuUpdateFrequency) {
-        apu.tick(_apuAccumulatedCycles);
+        apu.tick(_apuAccumulatedCycles, mmu.readRegisterByte(MemoryRegisters.div));
         _apuAccumulatedCycles = 0;
         _apuUpdateCounter = 0;
       }
     } else {
       ppu.tick(delta);
-      apu.tick(delta);
+      apu.tick(delta, mmu.readRegisterByte(MemoryRegisters.div));
     }
   }
 
@@ -309,7 +309,7 @@ class CPU {
         _ppuUpdateCounter = 0;
       }
       if (_apuAccumulatedCycles > 0) {
-        apu.tick(_apuAccumulatedCycles);
+        apu.tick(_apuAccumulatedCycles, mmu.readRegisterByte(MemoryRegisters.div));
         _apuAccumulatedCycles = 0;
         _apuUpdateCounter = 0;
       }

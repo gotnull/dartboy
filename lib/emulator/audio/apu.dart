@@ -174,6 +174,13 @@ class APU {
   int frameSequencerCycles = 0;
   int frameSequencer = 0;
 
+  // DIV-APU tracking for hardware-accurate frame sequencer
+  int lastDivAPU = 0;
+
+  // KameBoyColor m_cycles mechanism for proper channel timing
+  int mCycles = 0;
+  int audioCycles = 0;
+
   int leftVolume = 0; // Left master volume (0-7)
   int rightVolume = 0; // Right master volume (0-7)
 
@@ -232,6 +239,11 @@ class APU {
       return channel3.readWaveformRAM(address);
     }
 
+    // If APU is powered off, most registers read as 0xFF (except NR52 and wave RAM)
+    if ((nr52 & 0x80) == 0 && address != MemoryRegisters.nr52) {
+      return 0xFF;
+    }
+
     switch (address) {
       case MemoryRegisters.nr10:
         return channel1.readNR10();
@@ -282,9 +294,20 @@ class APU {
         return (nr52 & 0x80) |
             0x70 |
             channelStatus; // Bit 7 = power, bits 4-6 = 1, bits 0-3 = channel status
-      case 0xFF15: // Unused register between NR14 and NR20
+      case 0xFF15: // Unused register between NR14 and NR21
         return 0xFF;
-      case 0xFF1F: // Unused register between NR24 and NR30
+      case 0xFF1F: // Unused register between NR34 and NR41
+        return 0xFF;
+      // Unused registers between NR52 and Wave RAM
+      case 0xFF27:
+      case 0xFF28:
+      case 0xFF29:
+      case 0xFF2A:
+      case 0xFF2B:
+      case 0xFF2C:
+      case 0xFF2D:
+      case 0xFF2E:
+      case 0xFF2F:
         return 0xFF;
       default:
         // Only print unknown register messages for addresses that should be audio registers
@@ -318,6 +341,14 @@ class APU {
       } else {
         // Power on: retain the always-on bits (4-6) in NR52
         nr52 = (value & 0x80) | 0x70; // Bits 4-6 are always 1
+
+        // CGB behavior: Length counters are NOT reset when APU is powered on
+        // This is different from DMG behavior
+        // Keep existing length counter values
+
+        // Critical: Frame sequencer phase is cleared to 0 on power-on (0->1 transition of NR52.7)
+        // This is required for test 07 to pass
+        frameSequencer = 0;
       }
       return;
     }
@@ -447,11 +478,15 @@ class APU {
     // cyclesPerFrameSequencer remains at 8192, as per Game Boy hardware
   }
 
-  void tick(int cycles) {
+  // Backward compatibility - uses a default DIV value if not provided
+  void tick(int cycles, [int? divRegister]) {
+    _tick(cycles, divRegister ?? 0);
+  }
+
+  void _tick(int cycles, int divRegister) {
     if (!isInitialized || (nr52 & 0x80) == 0) return;
 
     accumulatedCycles += cycles;
-    frameSequencerCycles += cycles;
 
     // Update each channel only if APU is powered on
     channel1.tick(cycles);
@@ -459,17 +494,36 @@ class APU {
     channel3.tick(cycles);
     channel4.tick(cycles);
 
-    // Update frame sequencer every 8192 CPU cycles
-    while (frameSequencerCycles >= cyclesPerFrameSequencer) {
-      updateFrameSequencer();
-      frameSequencerCycles -= cyclesPerFrameSequencer;
-    }
+    // Frame sequencer: Use DIV-APU method for proper hardware timing
+    // CGB in normal speed mode: DIV bit 5 (bit position 13 of DIV) controls frame sequencer
+    // CGB in double speed mode: DIV bit 6 (bit position 14 of DIV) controls frame sequencer
+    // For now, assume normal speed mode (bit 5)
+    int divAPUBit = (divRegister >> 5) & 1;
 
-    // Generate audio samples at exact intervals for cycle accuracy
+    // Check for falling edge of DIV-APU (1->0 transition)
+    if (lastDivAPU == 1 && divAPUBit == 0) {
+      updateFrameSequencer();
+    }
+    lastDivAPU = divAPUBit;
+
+    // Generate audio samples at exact intervals
     while (accumulatedCycles >= cyclesPerSample) {
       mixAndQueueAudioSample();
       accumulatedCycles -= cyclesPerSample;
     }
+  }
+
+  // Get current position within frame sequencer period (0-8191)
+  int getFrameSequencerCycles() => frameSequencerCycles;
+
+  // Check if we're in the first half of a length-clocking period
+  bool isInFirstHalfOfLengthPeriod() {
+    // Length counters are clocked on steps 0, 2, 4, 6
+    // Each step is 8192/8 = 1024 cycles long
+    // So we're in first half if we're in cycles 0-511 of any even step
+    int stepCycles = frameSequencerCycles % 1024;
+    bool isEvenStep = (frameSequencer & 1) == 0;
+    return isEvenStep && stepCycles < 512;
   }
 
   void updateFrameSequencer() {
@@ -527,6 +581,9 @@ class APU {
     channel2.updateLengthCounter();
     channel3.updateLengthCounter();
     channel4.updateLengthCounter();
+
+    // Update NR52 channel status immediately after length counter updates
+    updateNR52ChannelStatus();
   }
 
   void updateEnvelopes() {
@@ -714,6 +771,9 @@ class APU {
     accumulatedCycles = 0;
     frameSequencerCycles = 0;
     frameSequencer = 0;
+    lastDivAPU = 0;
+    mCycles = 0;
+    audioCycles = 0;
     _leftHighPassState = 0.0;
     _rightHighPassState = 0.0;
     updateVolumes();

@@ -62,22 +62,34 @@ class Channel3 {
   // NR34: Frequency High and Control
   int readNR34() => (nr34 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
   void writeNR34(int value) {
-    bool wasLengthEnabled = lengthEnabled;
+    bool lengthEnable = (value & 0x40) != 0;
     nr34 = value;
-    lengthEnabled = (nr34 & 0x40) != 0;
+
     frequency = (nr34 & 0x07) << 8 | nr33;
-    
-    // Length counter extra clocking when enabling length
-    if (!wasLengthEnabled &&
-        lengthEnabled &&
-        lengthCounter > 0 &&
-        (frameSequencer & 1) == 0) {
-      lengthCounter--;
-      if (lengthCounter == 0) {
-        enabled = false;
+
+    // KameBoyColor obscure behavior: Length counter extra clocking
+    bool nextStepDoesntUpdate = (frameSequencer & 1) == 0;
+    if (nextStepDoesntUpdate) {
+      if (lengthEnable && !lengthEnabled && lengthCounter > 0) {
+        lengthCounter--;
+        if (lengthCounter == 0) {
+          enabled = false;
+        }
       }
     }
-    
+
+    // More obscure behavior from KameBoyColor - Channel 3 has 256 length
+    if ((value & 0x80) != 0 && lengthEnabled && lengthCounter == 256) {
+      lengthCounter--;
+    }
+
+    // Blargg test 2 behavior
+    if ((value & 0x80) != 0 && lengthCounter == 0) {
+      lengthCounter = 256;
+    }
+
+    lengthEnabled = lengthEnable;
+
     if ((nr34 & 0x80) != 0) {
       trigger();
     }
@@ -91,72 +103,73 @@ class Channel3 {
     enabled = dacEnabled;
 
     if (enabled) {
-      // Reset frequency timer with initial period
-      frequencyTimer = 2 * (2048 - frequency);
+      // Channel 3 uses different timing - KameBoyColor line 649
+      frequencyTimer = 0x800 - frequency;
 
-      // Reset sample index to start of wave RAM
+      // CGB behavior: Add 6-cycle delay when wave channel is triggered
+      // This affects timing for reading wave RAM while channel is active
+      frequencyTimer += 6;
+
+      // KameBoyColor: waveform_idx starts at 0 (line 657)
       sampleIndex = 0;
-
-      // Read first sample from wave RAM
-      int firstByte = waveformRAM[0];
-      currentSample = (firstByte >> 4) & 0x0F; // High nibble of first byte
 
       // Length counter handling
       if (lengthCounter == 0) {
         lengthCounter = 256; // Wave channel has 256-step length counter
-        // Extra clocking if frame sequencer is about to clock length
+        // Extra clocking if length enabled during length-clocking steps
         if (lengthEnabled && (frameSequencer & 1) == 0) {
           lengthCounter--;
-          if (lengthCounter == 0) enabled = false;
+          if (lengthCounter == 0) {
+            enabled = false;
+          }
         }
       }
     }
   }
 
-  // Update the frequency timer based on the current frequency
+  // Update frequency timer - KameBoyColor Channel 3 style
   void updateFrequencyTimer() {
-    frequencyTimer = (2048 - frequency) * 2;
-    if (frequencyTimer <= 0) frequencyTimer = 2; // Ensure minimum period
+    frequencyTimer = 0x800 - frequency;
+    if (frequencyTimer <= 0) frequencyTimer = 1; // Ensure minimum period
   }
 
   // Update method called every CPU cycle - optimized for performance
-  // Update method called every CPU cycle - cycle accurate per Pan Docs
+  // Update method - matches KameBoyColor Channel 3 exactly (lines 677-684)
   void tick(int cycles) {
     if (!enabled) return;
 
-    // Frequency timer decrements every CPU cycle
-    // Pan Docs: "sample index advances at 32x channel frequency"
-    // Period = 2 * (2048 - frequency) CPU cycles (different from pulse channels)
+    // Channel 3 uses DOWN counting like KameBoyColor
     frequencyTimer -= cycles;
-    while (frequencyTimer <= 0) {
-      // Calculate the reload period
-      int period = 2 * (2048 - frequency);
-      if (period <= 0) period = 2; // Minimum period to prevent locks
-
-      // Reload timer
+    int loopCount = 0;
+    while (frequencyTimer <= 0 && loopCount < 1000) { // Safety limit to prevent infinite loops
+      // Reload with KameBoyColor formula (line 683)
+      int period = 0x800 - frequency;
+      if (period <= 0) period = 1;
       frequencyTimer += period;
 
       // Advance sample index and read new sample
       advanceSampleIndex();
+      loopCount++;
     }
   }
 
-  // Advance sample index and read new 4-bit sample from wave RAM
-  // Pan Docs: "sample index counter advances at 32x channel frequency"
+  // Advance sample index - matches KameBoyColor exactly (lines 679-683)
   void advanceSampleIndex() {
-    // Advance sample index (0-31, wrapping)
-    sampleIndex = (sampleIndex + 1) % 32;
-
-    // Read new 4-bit sample from wave RAM
-    // Wave RAM stores 32 4-bit samples in 16 bytes
-    int byteIndex = sampleIndex ~/ 2;
-    int sampleData = waveformRAM[byteIndex];
-
-    // Extract 4-bit sample (high nibble for even indices, low for odd)
-    if (sampleIndex % 2 == 0) {
-      currentSample = (sampleData >> 4) & 0x0F; // High nibble
+    // KameBoyColor waveform advance logic
+    if (sampleIndex == 32) {
+      sampleIndex = 1;
     } else {
-      currentSample = sampleData & 0x0F; // Low nibble
+      sampleIndex++;
+    }
+
+    // Read sample using KameBoyColor formula (lines 690-695)
+    int sampleOffset = (sampleIndex - 1) ~/ 2;
+    int waveForm = waveformRAM[sampleOffset];
+
+    if (sampleIndex % 2 == 0) {
+      currentSample = waveForm & 0x0F; // Low nibble
+    } else {
+      currentSample = (waveForm >> 4) & 0x0F; // High nibble
     }
   }
 
@@ -196,13 +209,24 @@ class Channel3 {
         break;
     }
 
-    // Return digital value (0-15) for DAC conversion
-    return outputLevel & 0x0F;
+    // KameBoyColor Channel 3 output formula (line 697)
+    return outputLevel;
   }
 
   // Read from Waveform RAM (0xFF30 - 0xFF3F)
   int readWaveformRAM(int address) {
     int index = address - 0xFF30;
+
+    // Wave RAM corruption: if channel is playing, return the currently playing sample
+    // instead of the actual RAM contents
+    if (enabled && dacEnabled) {
+      // Return the sample that the wave channel is currently reading
+      // This simulates the hardware bug where wave RAM reads are corrupted
+      // when the channel is actively playing
+      int currentByteIndex = (sampleIndex ~/ 2) % 16;
+      return waveformRAM[currentByteIndex];
+    }
+
     return waveformRAM[index];
   }
 
@@ -233,9 +257,15 @@ class Channel3 {
 
   // Frame sequencer reference (needs to be set from Audio class)
   int frameSequencer = 0;
+  int frameSequencerCycles = 0;
 
   // Set frame sequencer value (called from Audio class)
   void setFrameSequencer(int value) {
     frameSequencer = value;
+  }
+
+  // Set frame sequencer cycles (called from Audio class)
+  void setFrameSequencerCycles(int value) {
+    frameSequencerCycles = value;
   }
 }

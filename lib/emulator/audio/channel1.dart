@@ -20,6 +20,7 @@ class Channel1 {
   bool sweepNegate = false; // Sweep direction (false=increase, true=decrease)
   bool sweepEnabled = false; // Internal sweep enable flag
   int shadowFrequency = 0; // Shadow frequency for sweep calculations
+  bool sweepNegateModeUsed = false; // Tracks if negate mode has been used (obscure behavior)
 
   // Envelope state
   int envelopeTimer = 0; // Envelope timer
@@ -48,11 +49,29 @@ class Channel1 {
   // NR10: Sweep Register
   int readNR10() => (nr10 & 0x7F) | 0x80; // Only bits 0-6 writable, bit 7 always 1
   void writeNR10(int value) {
+    bool oldSweepNegate = sweepNegate;
     nr10 = value;
     sweepPeriod = (nr10 >> 4) & 0x07;
     sweepNegate = (nr10 & 0x08) != 0;
     sweepShift = nr10 & 0x07;
-    sweepEnabled = sweepPeriod != 0 || sweepShift != 0;
+
+    // Obscure behavior: Clearing negate mode after it was used disables channel
+    if (sweepNegateModeUsed && oldSweepNegate && !sweepNegate) {
+      enabled = false;
+    }
+
+    // Update sweep enable based on Pan Docs: enabled if period OR shift non-zero
+    // But also consider current sweep state for runtime changes
+    if (sweepPeriod == 0 && sweepShift == 0) {
+      sweepEnabled = false;
+    } else {
+      // Re-enable sweep if either period or shift becomes non-zero
+      sweepEnabled = true;
+      // If we just enabled a non-zero period, restart the sweep timer
+      if (sweepPeriod > 0) {
+        sweepTimer = sweepPeriod;
+      }
+    }
   }
 
   // NR11: Sound Length / Waveform Duty
@@ -65,7 +84,7 @@ class Channel1 {
   }
 
   // NR12: Volume Envelope
-  int readNR12() => nr12;
+  int readNR12() => nr12; // Returns stored value per KameBoyColor
   void writeNR12(int value) {
     nr12 = value;
     volume = (nr12 >> 4) & 0x0F;
@@ -88,23 +107,38 @@ class Channel1 {
   // NR14: Frequency High and Control
   int readNR14() => (nr14 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
   void writeNR14(int value) {
-    bool wasLengthEnabled = lengthEnabled;
+    bool lengthEnable = (value & 0x40) != 0;
     nr14 = value;
-    lengthEnabled = (nr14 & 0x40) != 0;
+
     frequency = (nr14 & 0x07) << 8 | nr13;
     updateFrequencyTimer();
-    
-    // Length counter extra clocking when enabling length
-    if (!wasLengthEnabled &&
-        lengthEnabled &&
-        lengthCounter > 0 &&
-        (frameSequencer & 1) == 0) {
+
+    // CGB obscure behavior: Length counter extra clocking during trigger
+    // Only clock length if next frame sequencer step would NOT clock length
+    bool nextStepClocksLength = (frameSequencer & 1) == 0;
+    if (!nextStepClocksLength && lengthEnable && !lengthEnabled && lengthCounter > 0) {
       lengthCounter--;
       if (lengthCounter == 0) {
         enabled = false;
       }
     }
-    
+
+    // CGB behavior: If triggering with length enabled and length at max, decrement it
+    if ((value & 0x80) != 0 && lengthEnabled && lengthCounter == 64) {
+      lengthCounter = 63; // Set to 63, not 64-1
+    }
+
+    // If triggering with length 0, reload to maximum
+    if ((value & 0x80) != 0 && lengthCounter == 0) {
+      lengthCounter = 64;
+      // Extra clocking if we're about to clock length in the next step
+      if (lengthEnabled && nextStepClocksLength) {
+        lengthCounter = 63;
+      }
+    }
+
+    lengthEnabled = lengthEnable;
+
     if ((nr14 & 0x80) != 0) {
       trigger();
     }
@@ -118,20 +152,20 @@ class Channel1 {
 
 
     if (enabled) {
-      // Reset frequency timer with initial period
+      // Reset frequency timer - back to working formula
       frequencyTimer = 4 * (2048 - frequency);
 
-      // Pan Docs: "duty step is reset to 0" (starts outputting low)
+      // KameBoyColor: waveform_idx starts at 0
       dutyStep = 0;
 
-      // Reset envelope
-      envelopeTimer = envelopePeriod;
+      // Reset envelope - KameBoyColor behavior
+      envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
       volume = (nr12 >> 4) & 0x0F; // Initial volume from NR12 bits 4-7
 
       // Length counter handling
       if (lengthCounter == 0) {
         lengthCounter = 64; // Full length
-        // Extra clocking if frame sequencer is about to clock length
+        // Extra clocking if length enabled during length-clocking steps
         if (lengthEnabled && (frameSequencer & 1) == 0) {
           lengthCounter--;
           if (lengthCounter == 0) {
@@ -140,45 +174,49 @@ class Channel1 {
         }
       }
 
-      // Sweep initialization
+      // Sweep initialization - KameBoyColor behavior
       shadowFrequency = frequency;
-      sweepTimer = sweepPeriod > 0 ? sweepPeriod : 8;
+      sweepTimer = sweepPeriod == 0 ? 8 : sweepPeriod;
       sweepEnabled = (sweepPeriod != 0) || (sweepShift != 0);
+      sweepNegateModeUsed = false;
 
-      // Initial frequency calculation and overflow check
+      // Per Pan Docs: "If the shift amount is non-zero, frequency calculation
+      // and overflow check are performed immediately"
       if (sweepShift != 0) {
         int newFreq = calculateSweepFrequency();
         if (newFreq > 2047) {
-          enabled = false; // Disable if overflow
+          enabled = false; // Disable channel immediately on overflow
         }
       }
     }
   }
 
-  // Update the frequency timer based on the current frequency
+  // Update frequency timer - back to working formula
   void updateFrequencyTimer() {
-    frequencyTimer = (2048 - frequency) * 4;
-    if (frequencyTimer <= 0) frequencyTimer = 4; // Ensure minimum period
+    frequencyTimer = 4 * (2048 - frequency);
+    if (frequencyTimer <= 0) frequencyTimer = 4;
   }
 
-  // Update method called every CPU cycle - cycle accurate per Pan Docs
+  // Frequency timer - back to DOWN counting to avoid lockups
   void tick(int cycles) {
     if (!enabled) return;
 
-    // Frequency timer decrements every CPU cycle
-    // Period = 4 * (2048 - frequency) CPU cycles
-    // Duty step advances when timer reaches 0
+    // Back to DOWN counting but with correct period calculation
     frequencyTimer -= cycles;
-    while (frequencyTimer <= 0) {
-      // Calculate the reload period
+    int loopCount = 0;
+    while (frequencyTimer <= 0 && loopCount < 1000) { // Safety limit to prevent infinite loops
+      // KameBoyColor waveform advance logic
+      if (dutyStep == 8) {
+        dutyStep = 1;
+      } else {
+        dutyStep++;
+      }
+
+      // Use proper Game Boy frequency formula
       int period = 4 * (2048 - frequency);
-      if (period <= 0) period = 4; // Minimum period to prevent locks
-
-      // Reload timer
+      if (period <= 0) period = 4;
       frequencyTimer += period;
-
-      // Advance duty step (Pan Docs: "duty step counter advances")
-      dutyStep = (dutyStep + 1) % 8;
+      loopCount++;
     }
   }
 
@@ -192,22 +230,21 @@ class Channel1 {
     }
   }
 
-  // Update envelope (called by frame sequencer)
+  // Update envelope - matches KameBoyColor exactly (lines 525-538)
   void updateEnvelope() {
-    if (envelopePeriod > 0 && enabled) {
+    // KameBoyColor checks volume_pace != 0, not envelopePeriod
+    if (envelopePeriod != 0 && enabled) {
       envelopeTimer--;
       if (envelopeTimer <= 0) {
-        envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
-        if (envelopeIncrease && volume < 15) {
+        envelopeTimer = envelopePeriod;
+        if (envelopeIncrease) {
           volume++;
-        } else if (!envelopeIncrease && volume > 0) {
-          volume--;
+        } else {
+          if (volume != 0) {
+            volume--;
+          }
         }
-
-        // Disable envelope if volume reaches boundary
-        if (volume == 0 || volume == 15) {
-          envelopeTimer = 0;
-        }
+        volume &= 0x0F; // KameBoyColor line 537
       }
     }
   }
@@ -218,30 +255,42 @@ class Channel1 {
       sweepTimer--;
       if (sweepTimer <= 0) {
         sweepTimer = sweepPeriod == 0 ? 8 : sweepPeriod;
-        int newFrequency = calculateSweepFrequency();
-        if (newFrequency <= 2047 && sweepShift != 0 && enabled) {
-          frequency = newFrequency;
-          shadowFrequency = newFrequency;
-          updateFrequencyTimer();
-          calculateSweepFrequency(); // Second calculation for overflow check
+        if (sweepShift != 0) {
+          int newFrequency = calculateSweepFrequency();
+          if (newFrequency <= 2047 && enabled) {
+            // Update internal frequency and shadow frequency
+            shadowFrequency = newFrequency & 0x7FF;
+            frequency = shadowFrequency;
+            updateFrequencyTimer();
+
+            // Perform second calculation for overflow check
+            int overflowCheck = calculateSweepFrequency();
+            if (overflowCheck > 2047) {
+              enabled = false;
+            }
+          } else if (newFrequency > 2047) {
+            // First calculation overflowed, disable channel
+            enabled = false;
+          }
         }
       }
     }
   }
 
   // Calculate the new frequency for the sweep
+  // Returns the calculated frequency, caller should check for overflow
   int calculateSweepFrequency() {
     int delta = shadowFrequency >> sweepShift;
-    int newFrequency =
-        sweepNegate ? shadowFrequency - delta : shadowFrequency + delta;
+    int newFrequency;
 
-    // Check for overflow and disable if out of range
-    if (newFrequency > 2047) {
-      enabled = false;
-      return newFrequency & 0x7FF; // Return masked value even if disabled
+    if (sweepNegate) {
+      newFrequency = shadowFrequency - delta;
+      sweepNegateModeUsed = true; // Track that negate mode was used
+    } else {
+      newFrequency = shadowFrequency + delta;
     }
-    
-    return newFrequency & 0x7FF; // Ensure 11-bit frequency
+
+    return newFrequency; // Return raw calculated frequency (may exceed 11-bit range)
   }
 
   // Get the output sample for the current state
@@ -250,11 +299,12 @@ class Channel1 {
     // If channel or DAC is disabled, output 0
     if (!enabled || !dacEnabled) return 0;
 
-    // Get current duty pattern bit
-    int dutyBit = dutyPatterns[dutyCycle][dutyStep];
+    // Safe duty pattern indexing - ensure index is always 0-7
+    int index = (dutyStep - 1) % 8;
+    if (index < 0) index = 7; // Handle dutyStep = 0 case
+    int dutyBit = dutyPatterns[dutyCycle][index];
 
     // Output volume when duty is high, 0 when low
-    // This produces the correct square wave with proper amplitude
     return dutyBit == 1 ? volume : 0;
   }
 
@@ -281,6 +331,7 @@ class Channel1 {
     sweepNegate = false;
     sweepEnabled = false;
     shadowFrequency = 0;
+    sweepNegateModeUsed = false;
 
     // Reset envelope state
     envelopeTimer = 0;
@@ -296,9 +347,15 @@ class Channel1 {
 
   // Frame sequencer reference (needs to be set from Audio class)
   int frameSequencer = 0;
+  int frameSequencerCycles = 0;
 
   // Set frame sequencer value (called from Audio class)
   void setFrameSequencer(int value) {
     frameSequencer = value;
+  }
+
+  // Set frame sequencer cycles (called from Audio class)
+  void setFrameSequencerCycles(int value) {
+    frameSequencerCycles = value;
   }
 }
