@@ -111,7 +111,6 @@ class MainScreenState extends State<MainScreen> {
     }
   }
 
-
   void _showRomSelection() {
     showModalBottomSheet(
       context: context,
@@ -213,14 +212,18 @@ class MainScreenState extends State<MainScreen> {
                               Icon(
                                 Icons.videogame_asset_off_rounded,
                                 size: 64,
-                                color: const Color(0xFF8E8E93).withValues(alpha: 0.5),
+                                color: const Color(0xFF8E8E93)
+                                    .withValues(alpha: 0.5),
                               ),
                               const SizedBox(height: 16),
                               Text(
                                 'No ROMs found',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  color: const Color(0xFF8E8E93),
-                                ),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(
+                                      color: const Color(0xFF8E8E93),
+                                    ),
                               ),
                               const SizedBox(height: 8),
                               Text(
@@ -276,7 +279,8 @@ class MainScreenState extends State<MainScreen> {
       try {
         final cartridge = Cartridge();
         cartridge.load(result.files.single.bytes!);
-        String cartridgeName = cartridge.name.replaceAll(RegExp(r'[^\x20-\x7E]'), '').trim();
+        String cartridgeName =
+            cartridge.name.replaceAll(RegExp(r'[^\x20-\x7E]'), '').trim();
         if (cartridgeName.isEmpty) {
           // Use filename as fallback
           String fileName = result.files.single.name;
@@ -285,7 +289,8 @@ class MainScreenState extends State<MainScreen> {
         MainScreen.currentRomName = cartridgeName;
       } catch (e) {
         // Fallback to filename if cartridge loading fails
-        MainScreen.currentRomName = result.files.single.name.replaceAll(RegExp(r'\.(gb|gbc)$'), '');
+        MainScreen.currentRomName =
+            result.files.single.name.replaceAll(RegExp(r'\.(gb|gbc)$'), '');
       }
 
       MainScreen.emulator.loadROM(result.files.single.bytes!);
@@ -395,42 +400,204 @@ class MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildMobileLayout() {
-    return Column(
-      children: [
-        // Header
-        _buildHeader(),
+    final screenSize = MediaQuery.of(context).size;
+    final isLandscape = screenSize.width > screenSize.height;
 
-        // Game Screen
-        Expanded(
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 20),
-            child: _buildGameScreen(),
+    return isLandscape ? _buildLandscapeLayout() : _buildPortraitLayout();
+  }
+
+  Widget _buildLandscapeLayout() {
+    return Row(
+      children: [
+        // Left Controls Panel
+        SizedBox(
+          width: 160,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildLargeDPad(),
+              const SizedBox(height: 32),
+              _buildLargeSystemButtons(),
+            ],
           ),
         ),
 
-        const SizedBox(height: 24),
+        // Center Game Area
+        Expanded(
+          child: Column(
+            children: [
+              // Minimal top bar
+              Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.videogame_asset_rounded,
+                      color: Color(0xFF007AFF),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        MainScreen.currentRomName ?? 'DartBoy',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      '${MainScreen.emulator.fps.toStringAsFixed(0)} FPS',
+                      style: const TextStyle(
+                        color: Color(0xFF007AFF),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
-        // Virtual Controls
-        _buildVirtualControls(),
+              // Large Game Screen
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF000000),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: const Color(0xFF2C2C2E),
+                      width: 3,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.8),
+                        blurRadius: 30,
+                        offset: const Offset(0, 15),
+                      ),
+                      BoxShadow(
+                        color: const Color(0xFF007AFF).withValues(alpha: 0.3),
+                        blurRadius: 40,
+                        offset: const Offset(0, 0),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(17),
+                    child: const AspectRatio(
+                      aspectRatio: 160 / 144,
+                      child: LCDWidget(key: Key("lcd")),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
 
-        const SizedBox(height: 24),
-
-        // Control Panel
-        _buildMobileControlPanel(),
-
-        const SizedBox(height: 12),
-
-        // Status
-        _buildStatusBar(),
-
-        // Debug info for mobile
-        if (MainScreen.debugEnabled) ...[
-          const SizedBox(height: 12),
-          _buildMobileDebugInfo(),
-        ],
-
-        const SizedBox(height: 20),
+        // Right Controls Panel
+        SizedBox(
+          width: 160,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildLargeActionButtons(),
+              const SizedBox(height: 32),
+              _buildLargeControlButtons(),
+            ],
+          ),
+        ),
       ],
+    );
+  }
+
+  Widget _buildPortraitLayout() {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // Minimal Header
+          Container(
+            height: 60,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.videogame_asset_rounded,
+                  color: Color(0xFF007AFF),
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    MainScreen.currentRomName ?? 'DartBoy',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                _buildQuickActions(),
+              ],
+            ),
+          ),
+
+          // Game Screen - Fixed height to prevent overflow
+          Container(
+            height: MediaQuery.of(context).size.height * 0.4,
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            child: _buildGameScreen(),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Virtual Controls
+          _buildVirtualControls(),
+
+          const SizedBox(height: 16),
+
+          // Simple Control Panel
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C1C1E),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildSimpleControlButton(
+                  icon: MainScreen.emulator.state == EmulatorState.running
+                      ? Icons.pause_rounded
+                      : Icons.play_arrow_rounded,
+                  label: MainScreen.emulator.state == EmulatorState.running
+                      ? 'Pause'
+                      : 'Play',
+                  onPressed: MainScreen.emulator.state == EmulatorState.running
+                      ? _pauseEmulator
+                      : _runOrStartEmulator,
+                  color: MainScreen.emulator.state == EmulatorState.running
+                      ? const Color(0xFFFF9500)
+                      : const Color(0xFF34C759),
+                ),
+                _buildSimpleControlButton(
+                  icon: Icons.refresh_rounded,
+                  label: 'Reset',
+                  onPressed: _resetEmulator,
+                  color: const Color(0xFF8E8E93),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+        ],
+      ),
     );
   }
 
@@ -530,7 +697,8 @@ class MainScreenState extends State<MainScreen> {
         const SizedBox(width: 8),
         _IOSButton(
           icon: Icons.library_books_rounded,
-          onPressed: (isLoadingRoms || isRefreshingRoms) ? null : _showRomSelection,
+          onPressed:
+              (isLoadingRoms || isRefreshingRoms) ? null : _showRomSelection,
           isLoading: isLoadingRoms || isRefreshingRoms,
         ),
       ],
@@ -717,41 +885,6 @@ class MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildMobileControlPanel() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1C1C1E),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _buildControlButton(
-            icon: MainScreen.emulator.state == EmulatorState.running
-                ? Icons.pause_rounded
-                : Icons.play_arrow_rounded,
-            label: MainScreen.emulator.state == EmulatorState.running
-                ? 'Pause'
-                : 'Run',
-            onPressed: MainScreen.emulator.state == EmulatorState.running
-                ? _pauseEmulator
-                : _runOrStartEmulator,
-            color: MainScreen.emulator.state == EmulatorState.running
-                ? const Color(0xFFFF9500)
-                : const Color(0xFF34C759),
-          ),
-          _buildControlButton(
-            icon: Icons.refresh_rounded,
-            label: 'Reset',
-            onPressed: _resetEmulator,
-            color: const Color(0xFF8E8E93),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildDesktopControlPanel() {
     return Container(
@@ -826,70 +959,7 @@ class MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildStatusBar() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1C1C1E),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildStatusItem(
-                  'FPS', MainScreen.emulator.fps.toStringAsFixed(1)),
-              _buildStatusItem('Speed', '${MainScreen.emulator.speed}Hz'),
-              _buildStatusItem(
-                  'Cycles', _formatNumber(MainScreen.emulator.cycles)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildToggleButton(
-                'Scanlines',
-                MainScreen.scanlineEnabled,
-                _toggleScanlines,
-              ),
-              _buildToggleButton(
-                MainScreen.debugEnabled ? 'Hide Debug' : 'Show Debug',
-                MainScreen.debugEnabled,
-                _toggleDebug,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildStatusItem(String label, String value) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            color: Color(0xFF007AFF),
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFF8E8E93),
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildPerformanceCard() {
     return Container(
@@ -1023,65 +1093,6 @@ class MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildMobileDebugInfo() {
-    final cpu = MainScreen.emulator.cpu;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1C1C1E),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Debug Info',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 12),
-          if (cpu != null) ...[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatusItem('PC',
-                    '0x${cpu.pc.toRadixString(16).toUpperCase().padLeft(4, '0')}'),
-                _buildStatusItem('SP',
-                    '0x${cpu.sp.toRadixString(16).toUpperCase().padLeft(4, '0')}'),
-                _buildStatusItem('AF',
-                    '0x${cpu.registers.getRegisterPair(3).toRadixString(16).toUpperCase().padLeft(4, '0')}'),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatusItem('BC',
-                    '0x${cpu.registers.getRegisterPair(0).toRadixString(16).toUpperCase().padLeft(4, '0')}'),
-                _buildStatusItem('DE',
-                    '0x${cpu.registers.getRegisterPair(1).toRadixString(16).toUpperCase().padLeft(4, '0')}'),
-                _buildStatusItem('HL',
-                    '0x${cpu.registers.getRegisterPair(2).toRadixString(16).toUpperCase().padLeft(4, '0')}'),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatusItem('IME', cpu.interruptsEnabled ? 'ON' : 'OFF'),
-                _buildStatusItem('Halt', cpu.halted ? 'YES' : 'NO'),
-                _buildStatusItem('', ''), // Empty for alignment
-              ],
-            ),
-          ] else ...[
-            Center(
-              child: _buildStatusItem('Status', 'CPU Not Loaded'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
 
   Widget _buildToggleButton(String label, bool isEnabled, VoidCallback onTap) {
     return GestureDetector(
@@ -1197,6 +1208,278 @@ class MainScreenState extends State<MainScreen> {
     });
   }
 
+  Widget _buildLargeDPad() {
+    return SizedBox(
+      width: 120,
+      height: 120,
+      child: Stack(
+        children: [
+          // Center piece
+          Center(
+            child: Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: const Color(0xFF2C2C2E),
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          // Up
+          Positioned(
+            top: 0,
+            left: 35,
+            child: _buildLargeDPadButton('▲', Gamepad.up),
+          ),
+          // Left
+          Positioned(
+            left: 0,
+            top: 35,
+            child: _buildLargeDPadButton('◄', Gamepad.left),
+          ),
+          // Right
+          Positioned(
+            right: 0,
+            top: 35,
+            child: _buildLargeDPadButton('►', Gamepad.right),
+          ),
+          // Down
+          Positioned(
+            bottom: 0,
+            left: 35,
+            child: _buildLargeDPadButton('▼', Gamepad.down),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLargeDPadButton(String label, int button) {
+    return GestureDetector(
+      onTapDown: (_) => _handleVirtualButton(button, true),
+      onTapUp: (_) => _handleVirtualButton(button, false),
+      onTapCancel: () => _handleVirtualButton(button, false),
+      child: Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          color: const Color(0xFF2C2C2E),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLargeSystemButtons() {
+    return Column(
+      children: [
+        _buildLargeSystemButton('SELECT', Gamepad.select),
+        const SizedBox(height: 12),
+        _buildLargeSystemButton('START', Gamepad.start),
+      ],
+    );
+  }
+
+  Widget _buildLargeSystemButton(String label, int button) {
+    return GestureDetector(
+      onTapDown: (_) => _handleVirtualButton(button, true),
+      onTapUp: (_) => _handleVirtualButton(button, false),
+      onTapCancel: () => _handleVirtualButton(button, false),
+      child: Container(
+        width: 100,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF2C2C2E),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLargeActionButtons() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildLargeActionButton('B', Gamepad.B, const Color(0xFF8E8E93)),
+        const SizedBox(width: 20),
+        _buildLargeActionButton('A', Gamepad.A, const Color(0xFF007AFF)),
+      ],
+    );
+  }
+
+  Widget _buildLargeActionButton(String label, int button, Color color) {
+    return GestureDetector(
+      onTapDown: (_) => _handleVirtualButton(button, true),
+      onTapUp: (_) => _handleVirtualButton(button, false),
+      onTapCancel: () => _handleVirtualButton(button, false),
+      child: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.2),
+          border: Border.all(color: color.withValues(alpha: 0.5), width: 2),
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 6,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLargeControlButtons() {
+    return Column(
+      children: [
+        _buildLargeControlButton(
+          icon: MainScreen.emulator.state == EmulatorState.running
+              ? Icons.pause_rounded
+              : Icons.play_arrow_rounded,
+          label: MainScreen.emulator.state == EmulatorState.running
+              ? 'PAUSE'
+              : 'PLAY',
+          onPressed: MainScreen.emulator.state == EmulatorState.running
+              ? _pauseEmulator
+              : _runOrStartEmulator,
+          color: MainScreen.emulator.state == EmulatorState.running
+              ? const Color(0xFFFF9500)
+              : const Color(0xFF34C759),
+        ),
+        const SizedBox(height: 12),
+        _buildLargeControlButton(
+          icon: Icons.refresh_rounded,
+          label: 'RESET',
+          onPressed: _resetEmulator,
+          color: const Color(0xFF8E8E93),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLargeControlButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    required Color color,
+  }) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: Container(
+        width: 100,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: color,
+              size: 24,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSimpleControlButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    required Color color,
+  }) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              icon,
+              color: color,
+              size: 24,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _runOrStartEmulator() {
     if (MainScreen.emulator.state == EmulatorState.ready) {
       _runEmulator();
@@ -1295,11 +1578,15 @@ class _GameTile extends StatelessWidget {
               decoration: BoxDecoration(
                 color: isTestRom
                     ? const Color(0xFFFF9500)
-                    : (isGBC ? const Color(0xFF007AFF) : const Color(0xFF8E8E93)),
+                    : (isGBC
+                        ? const Color(0xFF007AFF)
+                        : const Color(0xFF8E8E93)),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
-                isTestRom ? Icons.bug_report_rounded : Icons.videogame_asset_rounded,
+                isTestRom
+                    ? Icons.bug_report_rounded
+                    : Icons.videogame_asset_rounded,
                 color: Colors.white,
                 size: 20,
               ),

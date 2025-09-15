@@ -1,5 +1,5 @@
-import 'dart:ffi';
-import 'dart:io';
+import 'dart:ffi' if (dart.library.html) 'apu_web_stub.dart';
+import 'dart:io' if (dart.library.html) 'platform_web_stub.dart';
 
 import 'package:dartboy/emulator/audio/channel1.dart';
 import 'package:dartboy/emulator/audio/channel2.dart';
@@ -8,15 +8,15 @@ import 'package:dartboy/emulator/audio/channel4.dart';
 import 'package:dartboy/emulator/audio/mobile_audio.dart';
 import 'package:dartboy/emulator/configuration.dart';
 import 'package:dartboy/emulator/memory/memory_registers.dart';
-import 'package:ffi/ffi.dart';
+import 'package:ffi/ffi.dart' if (dart.library.html) 'apu_web_stub.dart';
 import 'package:flutter/foundation.dart';
 
 // Load the shared library with proper path handling
 late final DynamicLibrary? audioLib;
 
 DynamicLibrary? _loadAudioLibrary() {
-  // Skip audio library loading on mobile platforms
-  if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
+  // Skip audio library loading on web and mobile platforms
+  if (kIsWeb || (!kIsWeb && (Platform.isIOS || Platform.isAndroid))) {
     return null;
   }
 

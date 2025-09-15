@@ -1,7 +1,6 @@
 .DS_Store
 .idea/
 .dart_tool/
-lib/generated_plugin_registrant.dart
 build/
 assets/roms/
 assets/rom_manifest.json

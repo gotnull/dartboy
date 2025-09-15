@@ -36,8 +36,8 @@ dependencies:
   logger: ^2.4.0
   gamepads: ^0.1.2
   ffi: ^2.1.3
-  audio_session: ^0.1.21
-  flutter_sound: ^9.2.13
+  audio_session: ^0.1.25
+  flutter_sound: ^9.28.0
   shared_preferences: ^2.2.2
 
   # The following adds the Cupertino Icons font to your application.
