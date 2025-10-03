@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:io' if (dart.library.html) 'platform_web_stub.dart';
 
-import 'dart:typed_data';
-
 import 'package:audio_session/audio_session.dart' as audio_session;
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:flutter/services.dart';

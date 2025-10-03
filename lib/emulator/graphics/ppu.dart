@@ -57,12 +57,17 @@ class PPU {
   ///
   /// Actual Gameboy hardware can only draw 10 sprites/line, so we artificially introduce this limitation using this array.
   List<int> spritesDrawnPerLine = [];
+  List<int> bgPaletteIndices = [];
+  List<bool> bgPriorityBuffer = [];
 
   /// A counter for the number of cycles elapsed since the last LCD event.
   int lcdCycles = 0;
 
   /// Accumulator for how many VBlanks have been performed since the last reset.
   int currentVBlankCount = 0;
+
+  /// Internal line counter for the window layer. Only increments when the window is visible.
+  int windowLineCounter = 0;
 
   /// The timestamp of the last second, in nanoseconds.
   int lastSecondTime = 0;
@@ -114,6 +119,9 @@ class PPU {
 
     spritesDrawnPerLine = List<int>.filled(PPU.lcdHeight, 0);
     spritesDrawnPerLine.fillRange(0, spritesDrawnPerLine.length, 0);
+
+    bgPaletteIndices = List<int>.filled(PPU.lcdWidth * PPU.lcdHeight, -1);
+    bgPriorityBuffer = List<bool>.filled(PPU.lcdWidth * PPU.lcdHeight, false);
 
     if (cpu.cartridge.gameboyType == GameboyType.color) {
       gbcBackgroundPaletteMemory.fillRange(
@@ -362,10 +370,16 @@ class PPU {
 
       //Clear drawing buffer
       buffer.fillRange(0, buffer.length, 0);
+      bgPaletteIndices.fillRange(0, bgPaletteIndices.length, -1);
+      bgPriorityBuffer.fillRange(0, bgPriorityBuffer.length, false);
+      windowLineCounter = 0;
     }
 
-    // Draw the background if it's enabled
-    if (backgroundEnabled()) {
+    // In CGB mode, LCDC bit 0 controls priority, not visibility.
+    bool mustDrawBg =
+        cpu.cartridge.gameboyType == GameboyType.color || backgroundEnabled();
+
+    if (mustDrawBg) {
       drawBackgroundTiles(buffer, scanline);
     }
 
@@ -380,6 +394,7 @@ class PPU {
         getWindowPosX() < lcdWidth &&
         getWindowPosY() >= 0) {
       drawWindow(buffer, scanline);
+      windowLineCounter++;
     }
   }
 
@@ -418,16 +433,16 @@ class PPU {
       int addressBase =
           offset + ((y + scrollY ~/ 8) % 32 * 32) + ((x + scrollX ~/ 8) % 32);
 
-      int tile = tileDataOffset == 0
-          ? (cpu.mmu.readVRAM(addressBase) & 0xFF) // Unsigned
-          : ((cpu.mmu.readVRAM(addressBase) ^ 0x80) +
-              128); // Convert signed tile index to unsigned
+      int tileValue = cpu.mmu.readVRAM(addressBase);
+      int tile =
+          tileDataOffset == 0 ? tileValue : (tileValue.toSigned(8) + 128);
 
       int gbcVramBank = 0;
       int gbcPalette = 0;
       bool flipX = false;
       bool flipY = false;
 
+      bool bgHasPriority = false;
       // BG Map Attributes, in CGB Mode, an additional map of 32x32 ints is stored in VRAM Bank 1
       if (cpu.cartridge.gameboyType == GameboyType.color) {
         int attributes =
@@ -438,6 +453,7 @@ class PPU {
         flipX = (attributes & 0x20) != 0;
         flipY = (attributes & 0x40) != 0;
         gbcPalette = attributes & 0x7;
+        bgHasPriority = (attributes & 0x80) != 0;
       }
 
       // Calculate tile position  
@@ -453,12 +469,14 @@ class PPU {
             tileX,
             tileY,
             tile,
+            tileDataOffset,
             scanline,
             flipX,
             flipY,
             gbcVramBank,
             0,
-            false);
+            false,
+            bgHasPriority);
       }
     }
   }
@@ -476,21 +494,21 @@ class PPU {
 
     int tileMapOffset = getWindowTileMapOffset();
 
-    int y = (scanline - posY) ~/ 8;
+    int y = windowLineCounter ~/ 8;
 
     for (int x = getWindowPosX() ~/ 8; x < 21; x++) {
       // 32 tiles a row
       int addressBase = tileMapOffset + (x + y * 32);
 
-      int tile = tileDataOffset == 0
-          ? (cpu.mmu.readVRAM(addressBase) & 0xFF) // Unsigned
-          : ((cpu.mmu.readVRAM(addressBase) ^ 0x80) +
-              128); // Convert signed tile index to unsigned
+      int tileValue = cpu.mmu.readVRAM(addressBase);
+      int tile =
+          tileDataOffset == 0 ? tileValue : (tileValue.toSigned(8) + 128);
 
       int gbcVramBank = 0;
       bool flipX = false;
       bool flipY = false;
       int gbcPalette = 0;
+      bool bgHasPriority = false;
 
       // Same rules apply here as for background tiles.
       if (cpu.cartridge.gameboyType == GameboyType.color) {
@@ -504,10 +522,11 @@ class PPU {
         flipX = (attributes & 0x20) != 0;
         flipY = (attributes & 0x40) != 0;
         gbcPalette = attributes & 0x07;
+        bgHasPriority = (attributes & 0x80) != 0;
       }
 
       drawTile(bgPalettes[gbcPalette], data, posX + x * 8, posY + y * 8, tile,
-          scanline, flipX, flipY, gbcVramBank, PPU.p6, false);
+          tileDataOffset, scanline, flipX, flipY, gbcVramBank, 0, false, bgHasPriority);
     }
   }
 
@@ -530,15 +549,18 @@ class PPU {
       int x,
       int y,
       int tile,
+      int tileDataOffset,
       int scanline,
       bool flipX,
       bool flipY,
       int bank,
       int basePriority,
-      bool sprite) {
+      bool sprite,
+      bool bgHasPriority) {
     // Store a local copy to save a lot of load opcodes.
     int line = scanline - y;
-    int addressBase = MemoryAddresses.vramPageSize * bank + tile * 16;
+    int addressBase =
+        tileDataOffset + (MemoryAddresses.vramPageSize * bank) + tile * 16;
 
     // Handle the x and y flipping by tweaking the indexes we are accessing
     int logicalLine = (flipY ? 7 - line : line);
@@ -572,12 +594,67 @@ class PPU {
       int paletteLower = (tileLow & bitMask) >> (7 - logicalX);
 
       int paletteIndex = paletteUpper | paletteLower;
+
+      if (!sprite) {
+        bgPaletteIndices[index] = paletteIndex;
+        bgPriorityBuffer[index] = bgHasPriority;
+      }
+
       int priority = (basePriority == 0)
           ? (paletteIndex == 0 ? PPU.p1 : PPU.p3)
           : basePriority;
 
-      if (sprite && paletteIndex == 0) {
-        continue;
+      if (sprite) {
+        // Transparent sprite pixels are not drawn
+        if (paletteIndex == 0) {
+          continue;
+        }
+
+        if (cpu.cartridge.gameboyType == GameboyType.color) {
+          // CGB Priority Logic
+          bool bgPixelHasPriority = false;
+          int bgPaletteIndex = bgPaletteIndices[index];
+
+          if (bgPaletteIndex == 0 || bgPaletteIndex == -1) {
+            // Rule 1: BG color 0 is always behind sprites. OBJ has priority.
+            bgPixelHasPriority = false;
+          } else {
+            // LCDC bit 0 (BG/Window display) is used for priority in CGB mode.
+            bool lcdcBit0Enabled = (cpu.mmu.readRegisterByte(MemoryRegisters.lcdc) &
+                    MemoryRegisters.lcdcBgWindowDisplayBit) !=
+                0;
+            if (!lcdcBit0Enabled) {
+              // Rule 2: If LCDC bit 0 is off, OBJ has priority.
+              bgPixelHasPriority = false;
+            } else {
+              bool oamPriorityBit = basePriority == PPU.p2; // OAM bit 7
+              bool bgAttributePriorityBit = bgPriorityBuffer[index]; // BG attribute bit 7
+
+              if (!bgAttributePriorityBit && !oamPriorityBit) {
+                // Rule 3: If both priority bits are off, OBJ has priority.
+                bgPixelHasPriority = false;
+              } else {
+                // Rule 4: Otherwise, BG has priority.
+                bgPixelHasPriority = true;
+              }
+            }
+          }
+
+          if (bgPixelHasPriority) {
+            continue;
+          }
+        } else {
+          // DMG Priority Logic
+          // OAM bit 7 (BG-to-OBJ priority)
+          bool oamPriorityBit = basePriority == PPU.p2;
+          if (oamPriorityBit) {
+            int bgPaletteIndex = bgPaletteIndices[index];
+            // If BG color is 1-3, BG has priority
+            if (bgPaletteIndex != 0 && bgPaletteIndex != -1) {
+              continue;
+            }
+          }
+        }
       }
 
       if (priority >= (data[index] & 0xFF000000)) {
@@ -644,19 +721,19 @@ class PPU {
         int lo = flipY ? (tile & 0xFE) : (tile | 0x01);
 
         if (y - 16 <= scanline && scanline < y - 8) {
-          drawTile(pal, data, x - 8, y - 16, hi, scanline, flipX, flipY,
-              vrambank, priority, true);
+          drawTile(pal, data, x - 8, y - 16, hi, 0, scanline, flipX, flipY,
+              vrambank, priority, true, false);
           spritesDrawnPerLine[scanline]++;
         }
 
         if (y - 8 <= scanline && scanline < y) {
-          drawTile(pal, data, x - 8, y - 8, lo, scanline, flipX, flipY,
-              vrambank, priority, true);
+          drawTile(pal, data, x - 8, y - 8, lo, 0, scanline, flipX, flipY,
+              vrambank, priority, true, false);
           spritesDrawnPerLine[scanline]++;
         }
       } else {
-        drawTile(pal, data, x - 8, y - 16, tile, scanline, flipX, flipY,
-            vrambank, priority, true);
+        drawTile(pal, data, x - 8, y - 16, tile, 0, scanline, flipX, flipY,
+            vrambank, priority, true, false);
         spritesDrawnPerLine[scanline]++;
       }
     }

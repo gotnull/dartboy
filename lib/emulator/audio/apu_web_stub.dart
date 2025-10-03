@@ -1,9 +1,7 @@
-// Simple web stubs for FFI types
-import 'dart:typed_data';
-
 class DynamicLibrary {
   static DynamicLibrary? open(String path) => null;
-  T lookup<T>(String symbol) => throw UnsupportedError('FFI not supported on web');
+  T lookup<T>(String symbol) =>
+      throw UnsupportedError('FFI not supported on web');
 }
 
 class Pointer<T> {
@@ -11,8 +9,11 @@ class Pointer<T> {
 }
 
 class Uint8 {}
+
 class Int32 {}
+
 class Uint32 {}
+
 class Void {}
 
 typedef NativeFunction<T> = T;
