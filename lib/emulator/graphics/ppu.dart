@@ -383,11 +383,6 @@ class PPU {
       drawBackgroundTiles(buffer, scanline);
     }
 
-    // If sprites are enabled, draw them.
-    if (spritesEnabled()) {
-      drawSprites(buffer, scanline);
-    }
-
     // If the window appears in this scanline, draw it
     if (windowEnabled() &&
         scanline >= getWindowPosY() &&
@@ -395,6 +390,11 @@ class PPU {
         getWindowPosY() >= 0) {
       drawWindow(buffer, scanline);
       windowLineCounter++;
+    }
+
+    // If sprites are enabled, draw them.
+    if (spritesEnabled()) {
+      drawSprites(buffer, scanline);
     }
   }
 
@@ -496,7 +496,7 @@ class PPU {
 
     int y = windowLineCounter ~/ 8;
 
-    for (int x = getWindowPosX() ~/ 8; x < 21; x++) {
+    for (int x = 0; x < 21; x++) {
       // 32 tiles a row
       int addressBase = tileMapOffset + (x + y * 32);
 
