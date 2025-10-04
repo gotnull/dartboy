@@ -281,7 +281,8 @@ class PPU {
       }
 
       bool isVBlank = 144 <= ly;
-      if (!isVBlank) {
+      // HDMA should be halted when the CPU is halted
+      if (!isVBlank && !cpu.halted) {
         cpu.mmu.dma?.tick();
       }
 

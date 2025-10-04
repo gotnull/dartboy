@@ -41,7 +41,7 @@ class DMA {
   void tick() {
     for (int i = 0; i < 0x10; i++) {
       memory!.vram[memory!.vramPageStart + destination + position + i] =
-          memory!.readByte(source + i) & 0xFF;
+          memory!.readByte(source + position + i) & 0xFF;
     }
 
     position += 0x10;
