@@ -1,4 +1,5 @@
 import 'package:dartboy/emulator/memory/memory.dart';
+import 'package:dartboy/emulator/memory/memory_registers.dart';
 
 /// The MMU (memory management unit) is used to access memory.
 ///
@@ -44,6 +45,10 @@ class MMU extends Memory {
   ///
   /// Meaning of the values is stored in the MemoryRegisters class
   int readRegisterByte(int address) {
+    // IF register (0xFF0F): upper 3 bits always read as 1
+    if (address == MemoryRegisters.triggeredInterrupts) {
+      return registers[address] | 0xE0;
+    }
     return registers[address];
   }
 
