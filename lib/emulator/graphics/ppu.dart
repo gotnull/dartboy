@@ -580,12 +580,6 @@ class PPU {
         continue;
       }
 
-      // Check if our current priority should overwrite the current priority
-      int index = dx + scanline * PPU.lcdWidth;
-      if (basePriority != 0 && basePriority < (data[index] & 0xFF000000)) {
-        continue;
-      }
-
       int logicalX = (flipX ? 7 - px : px);
       int bitMask = (0x80 >> logicalX);
 
@@ -594,6 +588,9 @@ class PPU {
       int paletteLower = (tileLow & bitMask) >> (7 - logicalX);
 
       int paletteIndex = paletteUpper | paletteLower;
+
+      // Calculate buffer index
+      int index = dx + scanline * PPU.lcdWidth;
 
       if (!sprite) {
         bgPaletteIndices[index] = paletteIndex;
@@ -630,11 +627,14 @@ class PPU {
               bool oamPriorityBit = basePriority == PPU.p2; // OAM bit 7
               bool bgAttributePriorityBit = bgPriorityBuffer[index]; // BG attribute bit 7
 
-              if (!bgAttributePriorityBit && !oamPriorityBit) {
-                // Rule 3: If both priority bits are off, OBJ has priority.
+              // When LCDC bit 0 is on (1):
+              // - If OAM bit 7 = 0 AND BG bit 7 = 0, OBJ has priority
+              // - Otherwise, BG has priority (for colors 1-3)
+              if (!oamPriorityBit && !bgAttributePriorityBit) {
+                // Both priority bits are off, OBJ has priority.
                 bgPixelHasPriority = false;
               } else {
-                // Rule 4: Otherwise, BG has priority.
+                // At least one priority bit is on, BG has priority.
                 bgPixelHasPriority = true;
               }
             }
@@ -643,6 +643,10 @@ class PPU {
           if (bgPixelHasPriority) {
             continue;
           }
+
+          // In CGB mode, if we reach here, OBJ has priority per CGB rules.
+          // Boost priority to ensure it can overwrite BG pixels.
+          priority = PPU.p6;
         } else {
           // DMG Priority Logic
           // OAM bit 7 (BG-to-OBJ priority)
@@ -655,6 +659,11 @@ class PPU {
             }
           }
         }
+      }
+
+      // For background tiles, check if we can overwrite existing pixels
+      if (!sprite && basePriority != 0 && basePriority < (data[index] & 0xFF000000)) {
+        continue;
       }
 
       if (priority >= (data[index] & 0xFF000000)) {
