@@ -543,17 +543,23 @@ class Instructions {
   }
 
   static void halt(CPU cpu) {
-    cpu.halted = true;
     cpu.haltExecutedAtClock = cpu.clocks;
+
     // Check for halt bug condition at the time of HALT execution
+    // Halt bug occurs when IME=0 and there's a pending interrupt (IE & IF != 0)
     if (!cpu.interruptsEnabled) {
       int ie = cpu.mmu.readRegisterByte(MemoryRegisters.enabledInterrupts);
       int ifr = cpu.mmu.readRegisterByte(MemoryRegisters.triggeredInterrupts);
-      if ((ie & ifr) != 0) {
+      if ((ie & ifr & 0x1F) != 0) {
+        // HALT bug: HALT mode is not entered, PC increment is skipped for next instruction
         cpu.haltBugTriggered = true;
-        cpu.halted = false; // Exit halt immediately due to bug
+        cpu.halted = false; // Don't enter halt mode
+        return; // HALT instruction still takes 4 cycles but doesn't enter halt mode
       }
     }
+
+    // Normal HALT: enter halt mode
+    cpu.halted = true;
   }
 
   static void ldhffnn(CPU cpu) {

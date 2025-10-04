@@ -395,10 +395,11 @@ class CPU {
 
     if (halted) {
       // Check for pending interrupts (enabled AND triggered)
-      int pendingInterrupts = ie & ifr;
+      // Only check the 5 valid interrupt bits (0x1F)
+      int pendingInterrupts = ie & ifr & 0x1F;
 
       if (pendingInterrupts != 0) {
-        // Exit halt if any interrupt is pending
+        // Exit halt if any interrupt is pending (regardless of IME value)
         halted = false;
       } else {
         // No interrupts pending, stay halted
@@ -411,15 +412,15 @@ class CPU {
       return 13; // Interrupt handling takes 13 cycles per Blargg's interrupt timing test
     }
 
-    // Fetch opcode and handle PC increment
+    // Fetch opcode
     int op = getUnsignedByte(pc);
 
-    // Handle halt bug: skip PC increment on first fetch after halt bug
+    // Increment PC after fetch (unless halt bug)
     if (!haltBugTriggered) {
-      pc++; // Normal PC increment
+      pc++;
     } else {
-      // Don't increment PC, causing the next instruction to execute twice
-      haltBugTriggered = false; // Clear the flag after affecting one fetch
+      // Halt bug: skip PC increment this time, but clear flag
+      haltBugTriggered = false;
     }
 
     int cyclesUsed = executeInstruction(op);
