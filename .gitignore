@@ -5,6 +5,7 @@ build/
 assets/roms/
 assets/rom_manifest.json
 blarggs-test-roms/
+.DS_Store
 
 # Prerequisites
 *.d
