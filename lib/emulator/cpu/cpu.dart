@@ -46,6 +46,9 @@ class CPU {
   /// Halt bug flag - when true, PC increment is skipped for next instruction
   bool haltBugTriggered = false;
 
+  /// Clock cycle when HALT was last executed (for HDMA halt detection)
+  int haltExecutedAtClock = -1;
+
   /// The current CPU clock cycle since the beginning of the emulation.
   int clocks = 0;
 
@@ -408,12 +411,15 @@ class CPU {
       return 13; // Interrupt handling takes 13 cycles per Blargg's interrupt timing test
     }
 
-    // Handle halt bug: PC increment is skipped for the opcode fetch only
+    // Fetch opcode and handle PC increment
     int op = getUnsignedByte(pc);
+
+    // Handle halt bug: skip PC increment on first fetch after halt bug
     if (!haltBugTriggered) {
-      pc++;
+      pc++; // Normal PC increment
     } else {
-      haltBugTriggered = false; // Reset after affecting one opcode fetch
+      // Don't increment PC, causing the next instruction to execute twice
+      haltBugTriggered = false; // Clear the flag after affecting one fetch
     }
 
     int cyclesUsed = executeInstruction(op);

@@ -20,12 +20,17 @@ class DMA {
   /// The current offset into the source/destination buffers.
   int position = 0;
 
+  /// Clock cycle when this DMA was started
+  int startedAtClock = -1;
+
   /// Creates a new DMA instance.
   ///
   /// @param source The source address to copy from.
   /// @param dest The destination address to copy to.
   /// @param length How many bytes to copy.
-  DMA(this.memory, this.source, this.destination, this.length);
+  /// @param startClock The clock cycle when this DMA was started.
+  DMA(this.memory, this.source, this.destination, this.length,
+      this.startedAtClock);
 
   /// DMA transfers 0x10 bytes of data during each H-Blank, ie. at LY=0-143, no data is transferred during V-Blank (LY=144-153), but the transfer will then continue at LY=00.
   ///
@@ -48,12 +53,13 @@ class DMA {
     length -= 0x10;
 
     if (length == 0) {
+      print(
+          'HDMA transfer complete: copied $position bytes from ${source.toRadixString(16)} to ${destination.toRadixString(16)}');
       memory!.dma = null;
       memory!.registers[MemoryRegisters.hdma] = 0xff;
       memory = null;
-      // print("Finished DMA from " + source.toString() + " to " + destination.toString());
     } else {
-      memory!.registers[MemoryRegisters.hdma] = (length ~/ 0x10 - 1);
+      memory!.registers[MemoryRegisters.hdma] = (length ~/ 0x10 - 1) & 0xFF;
     }
   }
 }

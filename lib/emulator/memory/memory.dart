@@ -74,6 +74,8 @@ class Memory {
 
     registers = Uint8List(0x100);
     registers.fillRange(0, registers.length, 0);
+    // HDMA5 should read as 0xFF when no transfer is active
+    registers[MemoryRegisters.hdma] = 0xFF;
 
     oam = Uint8List(0xA0);
     oam.fillRange(0, oam.length, 0);
@@ -279,22 +281,40 @@ class Memory {
     // Start H-DMA transfer
     else if (address == MemoryRegisters.hdma) {
       if (cpu.cartridge.gameboyType != GameboyType.classic) {
-        // Get the configuration of the H-DMA transfer
-        int length = ((value & 0x7f) + 1) * 0x10;
-        int source = ((registers[0x51] & 0xff) << 8) | (registers[0x52] & 0xF0);
-        int destination =
-            ((registers[0x53] & 0x1f) << 8) | (registers[0x54] & 0xF0);
-
         // H-Blank DMA
         if ((value & 0x80) != 0) {
-          dma = DMA(this, source, destination, length);
-          registers[MemoryRegisters.hdma] = (length ~/ 0x10 - 1) & 0xFF;
-        } else {
-          // General DMA
-          for (int i = 0; i < length; i++) {
-            vram[vramPageStart + destination + i] = readByte(source + i) & 0xFF;
+          // Only start new transfer if none is active
+          if (dma == null) {
+            // Get the configuration of the H-DMA transfer
+            int length = ((value & 0x7f) + 1) * 0x10;
+            int source = ((registers[0x51] & 0xff) << 8) | (registers[0x52] & 0xF0);
+            int destination =
+                ((registers[0x53] & 0x1f) << 8) | (registers[0x54] & 0xF0);
+
+            int ly = cpu.mmu.readRegisterByte(MemoryRegisters.ly);
+            print('HDMA initiated at LY=$ly: source=${source.toRadixString(16)}, dest=${destination.toRadixString(16)}, length=${length.toRadixString(16)}, halted=${cpu.halted}, HDMA5 will be set to ${((length ~/ 0x10 - 1) & 0xFF).toRadixString(16)}');
+            dma = DMA(this, source, destination, length, cpu.clocks);
+            registers[MemoryRegisters.hdma] = (length ~/ 0x10 - 1) & 0xFF;
+            print('HDMA5 is now ${registers[MemoryRegisters.hdma].toRadixString(16)}');
           }
-          registers[MemoryRegisters.hdma] = 0xFF;
+        } else {
+          // Writing 0 to bit 7 cancels active H-Blank transfer or starts general DMA
+          if (dma != null) {
+            // Cancel active H-Blank transfer
+            dma = null;
+            registers[MemoryRegisters.hdma] = 0xFF;
+          } else {
+            // General DMA (immediate transfer)
+            int length = ((value & 0x7f) + 1) * 0x10;
+            int source = ((registers[0x51] & 0xff) << 8) | (registers[0x52] & 0xF0);
+            int destination =
+                ((registers[0x53] & 0x1f) << 8) | (registers[0x54] & 0xF0);
+
+            for (int i = 0; i < length; i++) {
+              vram[vramPageStart + destination + i] = readByte(source + i) & 0xFF;
+            }
+            registers[MemoryRegisters.hdma] = 0xFF;
+          }
         }
       }
     }

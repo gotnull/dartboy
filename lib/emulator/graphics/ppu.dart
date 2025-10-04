@@ -281,8 +281,9 @@ class PPU {
       }
 
       bool isVBlank = 144 <= ly;
-      // HDMA should be halted when the CPU is halted
-      if (!isVBlank && !cpu.halted) {
+      // HDMA HBlank transfers happen during HBlank period (not during VBlank)
+      // HDMA continues even when CPU is halted
+      if (cpu.mmu.dma != null && !isVBlank) {
         cpu.mmu.dma?.tick();
       }
 

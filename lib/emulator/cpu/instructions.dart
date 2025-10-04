@@ -544,6 +544,7 @@ class Instructions {
 
   static void halt(CPU cpu) {
     cpu.halted = true;
+    cpu.haltExecutedAtClock = cpu.clocks;
     // Check for halt bug condition at the time of HALT execution
     if (!cpu.interruptsEnabled) {
       int ie = cpu.mmu.readRegisterByte(MemoryRegisters.enabledInterrupts);
