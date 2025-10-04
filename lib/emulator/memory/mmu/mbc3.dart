@@ -51,7 +51,12 @@ class MBC3 extends MBC {
         }
       } else if (value <= 0x03) {
         ramBank = value;
-        ramPageStart = ramBank * MBC.ramPageSize;
+        // Mask RAM bank to wrap around based on actual RAM banks available
+        int actualRamBank = ramBank;
+        if (cpu.cartridge.ramBanks > 0) {
+          actualRamBank = ramBank % cpu.cartridge.ramBanks;
+        }
+        ramPageStart = actualRamBank * MBC.ramPageSize;
       }
     } else if (address >= MemoryAddresses.switchableRamStart &&
         address < MemoryAddresses.switchableRamEnd) {

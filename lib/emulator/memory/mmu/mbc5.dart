@@ -54,7 +54,12 @@ class MBC5 extends MBC {
       int newBank = (romBank & 0xff) | ((value & 0x1) << 8);
       mapRom(newBank);
     } else if (address >= 0x4000 && address < 0x6000) {
-      ramPageStart = (value & 0x0F) * MBC.ramPageSize;
+      // Mask RAM bank to wrap around based on actual RAM banks available
+      int ramBank = value & 0x0F;
+      if (cpu.cartridge.ramBanks > 0) {
+        ramBank = ramBank % cpu.cartridge.ramBanks;
+      }
+      ramPageStart = ramBank * MBC.ramPageSize;
     } else if (address >= MemoryAddresses.switchableRamStart &&
         address < MemoryAddresses.switchableRamEnd) {
       if (ramEnabled) {

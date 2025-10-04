@@ -71,7 +71,12 @@ class MBC1 extends MBC {
     // Select a RAM Bank in range from 00-03h, or to specify the upper two bits (Bit 5-6) of the ROM Bank number, depending on the current ROM/RAM Mode.
     else if (address >= 0x4000 && address < 0x6000) {
       if (modeSelect == MBC1.mode16Rom8Ram) {
-        ramPageStart = (value & 0x03) * MBC.ramPageSize;
+        // Mask RAM bank to wrap around based on actual RAM banks available
+        int ramBank = value & 0x03;
+        if (cpu.cartridge.ramBanks > 0) {
+          ramBank = ramBank % cpu.cartridge.ramBanks;
+        }
+        ramPageStart = ramBank * MBC.ramPageSize;
       } else // if(modeSelect == MBC1.MODE_4ROM_32RAM)
       {
         selectROMBank((romBank & 0x1F) | ((value & 0x03) << 4));
