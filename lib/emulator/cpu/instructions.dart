@@ -178,7 +178,12 @@ class Instructions {
   }
 
   static void stop(CPU cpu) {
-    nop(cpu);
+    // STOP: if prepareSpeedSwitch is set (KEY1 bit 0), toggle speed
+    if (cpu.prepareSpeedSwitch) {
+      cpu.setDoubleSpeed(!cpu.doubleSpeed);
+      cpu.prepareSpeedSwitch = false;
+    }
+    // Otherwise just act as NOP (on DMG, STOP enters low power mode, but we don't emulate that)
   }
 
   static void ldrr(CPU cpu, int op) {

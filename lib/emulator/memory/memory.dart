@@ -244,9 +244,10 @@ class Memory {
       );
     }
 
-    // Double speed control
+    // Double speed control (KEY1 register)
+    // Bit 0 when written: prepare speed switch (will occur on next STOP)
     if (address == MemoryRegisters.doubleSpeed) {
-      cpu.setDoubleSpeed((value & 0x01) != 0);
+      cpu.prepareSpeedSwitch = (value & 0x01) != 0;
     }
     // Background Palette Data
     else if (address == MemoryRegisters.backgroundPaletteData) {
@@ -412,8 +413,12 @@ class Memory {
       );
     }
 
+    // KEY1 register: bit 7 = current speed (1=double), bit 0 = prepare switch flag
     if (address == MemoryRegisters.doubleSpeed) {
-      return cpu.doubleSpeed ? 0x80 : 0x0;
+      int value = 0;
+      if (cpu.doubleSpeed) value |= 0x80; // Bit 7: current speed
+      if (cpu.prepareSpeedSwitch) value |= 0x01; // Bit 0: prepare switch
+      return value;
     }
     // Gamepad input handling
     else if (address == MemoryRegisters.gamepad) {

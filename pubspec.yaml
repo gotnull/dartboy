@@ -70,8 +70,6 @@ flutter:
   assets:
     - assets/roms/
     - assets/roms/blargg/
-    - assets/roms/blargg/cpu_instrs/
-    - assets/roms/blargg/instr_timing/
     - assets/roms/mooneye/
     - assets/roms/mooneye/oam_dma/
     - assets/roms/development/

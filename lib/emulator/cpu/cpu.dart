@@ -67,6 +67,9 @@ class CPU {
   /// Indicates if the emulator is running at double speed.
   bool doubleSpeed;
 
+  /// Prepare speed switch flag (KEY1 bit 0) - speed switch occurs on next STOP
+  bool prepareSpeedSwitch = false;
+
   int cycles = 0;
 
   int insCycles = 0;
@@ -132,6 +135,7 @@ class CPU {
     apu.updateClockSpeed(clockSpeed); // Ensure Audio is updated after reset
 
     doubleSpeed = false;
+    prepareSpeedSwitch = false;
     divCycle = 0;
     timerCycle = 0;
     sp = 0xFFFE;
@@ -218,9 +222,9 @@ class CPU {
   ///
   /// @param delta CPU cycles elapsed since the last call to this method
   void updateInterrupts(int delta) {
-    if (doubleSpeed) {
-      delta ~/= 2;
-    }
+    // GB timers (DIV/TIMA) count T-cycles directly, so use delta as-is
+    // PPU and APU need delta adjusted for double speed (divide by 2)
+    int ppuApuDelta = doubleSpeed ? (delta ~/ 2) : delta;
 
     // The DIV register increments at 16KHz, and resets to 0 after
     divCycle += delta;
@@ -245,22 +249,22 @@ class CPU {
       switch (tac & 0x3) {
         // 4096 Hz
         case 0x0:
-          timerPeriod = getActualClockSpeed() ~/ 4096;
+          timerPeriod = frequency ~/ 4096;
           break;
 
         // 262144 Hz
         case 0x1:
-          timerPeriod = getActualClockSpeed() ~/ 262144;
+          timerPeriod = frequency ~/ 262144;
           break;
 
         // 65536 Hz
         case 0x2:
-          timerPeriod = getActualClockSpeed() ~/ 65536;
+          timerPeriod = frequency ~/ 65536;
           break;
 
         // 16384 Hz
         case 0x3:
-          timerPeriod = getActualClockSpeed() ~/ 16384;
+          timerPeriod = frequency ~/ 16384;
           break;
       }
 
@@ -281,25 +285,25 @@ class CPU {
 
     // Performance optimization: batch PPU/APU updates
     if (Configuration.mobileOptimization) {
-      _ppuAccumulatedCycles += delta;
-      _apuAccumulatedCycles += delta;
-      
+      _ppuAccumulatedCycles += ppuApuDelta;
+      _apuAccumulatedCycles += ppuApuDelta;
+
       _ppuUpdateCounter++;
       if (_ppuUpdateCounter >= Configuration.ppuUpdateFrequency) {
         ppu.tick(_ppuAccumulatedCycles);
         _ppuAccumulatedCycles = 0;
         _ppuUpdateCounter = 0;
       }
-      
+
       _apuUpdateCounter++;
       if (_apuUpdateCounter >= Configuration.apuUpdateFrequency) {
-        apu.tick(_apuAccumulatedCycles, mmu.readRegisterByte(MemoryRegisters.div));
+        apu.tick(_apuAccumulatedCycles, mmu.readRegisterByte(MemoryRegisters.div), doubleSpeed);
         _apuAccumulatedCycles = 0;
         _apuUpdateCounter = 0;
       }
     } else {
-      ppu.tick(delta);
-      apu.tick(delta, mmu.readRegisterByte(MemoryRegisters.div));
+      ppu.tick(ppuApuDelta);
+      apu.tick(ppuApuDelta, mmu.readRegisterByte(MemoryRegisters.div), doubleSpeed);
     }
   }
 
@@ -312,7 +316,7 @@ class CPU {
         _ppuUpdateCounter = 0;
       }
       if (_apuAccumulatedCycles > 0) {
-        apu.tick(_apuAccumulatedCycles, mmu.readRegisterByte(MemoryRegisters.div));
+        apu.tick(_apuAccumulatedCycles, mmu.readRegisterByte(MemoryRegisters.div), doubleSpeed);
         _apuAccumulatedCycles = 0;
         _apuUpdateCounter = 0;
       }
@@ -409,7 +413,9 @@ class CPU {
     }
 
     if (interruptsEnabled && fireInterrupts()) {
-      return 13; // Interrupt handling takes 13 cycles per Blargg's interrupt timing test
+      // Testing with 20 to see the relationship
+      tick(20);
+      return 20;
     }
 
     // Fetch opcode

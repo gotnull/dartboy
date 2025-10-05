@@ -479,11 +479,11 @@ class APU {
   }
 
   // Backward compatibility - uses a default DIV value if not provided
-  void tick(int cycles, [int? divRegister]) {
-    _tick(cycles, divRegister ?? 0);
+  void tick(int cycles, [int? divRegister, bool doubleSpeed = false]) {
+    _tick(cycles, divRegister ?? 0, doubleSpeed);
   }
 
-  void _tick(int cycles, int divRegister) {
+  void _tick(int cycles, int divRegister, bool doubleSpeed) {
     if (!isInitialized || (nr52 & 0x80) == 0) return;
 
     accumulatedCycles += cycles;
@@ -495,13 +495,14 @@ class APU {
     channel4.tick(cycles);
 
     // Frame sequencer: Use DIV-APU method for proper hardware timing
-    // CGB in normal speed mode: DIV bit 5 (bit position 13 of DIV) controls frame sequencer
-    // CGB in double speed mode: DIV bit 6 (bit position 14 of DIV) controls frame sequencer
-    // For now, assume normal speed mode (bit 5)
-    int divAPUBit = (divRegister >> 5) & 1;
+    // CGB in normal speed mode: DIV bit 5 controls frame sequencer
+    // CGB in double speed mode: DIV bit 6 controls frame sequencer
+    int divBitPosition = doubleSpeed ? 6 : 5;
+    int divAPUBit = (divRegister >> divBitPosition) & 1;
 
-    // Check for falling edge of DIV-APU (1->0 transition)
-    if (lastDivAPU == 1 && divAPUBit == 0) {
+    // Check for edge of DIV-APU (any transition)
+    // Frame sequencer advances on BOTH rising and falling edges for 512 Hz
+    if (lastDivAPU != divAPUBit) {
       updateFrameSequencer();
     }
     lastDivAPU = divAPUBit;
