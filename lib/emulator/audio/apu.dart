@@ -239,10 +239,7 @@ class APU {
       return channel3.readWaveformRAM(address);
     }
 
-    // If APU is powered off, most registers read as 0xFF (except NR52 and wave RAM)
-    if ((nr52 & 0x80) == 0 && address != MemoryRegisters.nr52) {
-      return 0xFF;
-    }
+    
 
     switch (address) {
       case MemoryRegisters.nr10:
@@ -323,21 +320,25 @@ class APU {
 
     if (address == MemoryRegisters.nr52) {
       // Handle power on/off for APU
+      bool wasOn = (nr52 & 0x80) != 0;
       bool powerOn = (value & 0x80) != 0;
+
       if (!powerOn) {
         // Power off: reset all channels and disable APU
-        channel1.reset();
-        channel2.reset();
-        channel3.reset();
-        channel4.reset();
-        nr50 = 0;
-        nr51 = 0;
-        nr52 = 0; // Clear NR52 except the always-on bits (set below)
-        updateVolumes();
+        if (wasOn) {
+          channel1.reset();
+          channel2.reset();
+          channel3.reset();
+          channel4.reset();
+          nr50 = 0;
+          nr51 = 0;
+          updateVolumes();
 
-        // Reset frame sequencer when APU is powered off
-        frameSequencer = 0;
-        frameSequencerCycles = 0;
+          // Reset frame sequencer when APU is powered off
+          frameSequencer = 0;
+          frameSequencerCycles = 0;
+        }
+        nr52 = 0; // Clear NR52 except the always-on bits (set below)
       } else {
         // Power on: retain the always-on bits (4-6) in NR52
         nr52 = (value & 0x80) | 0x70; // Bits 4-6 are always 1
@@ -346,9 +347,11 @@ class APU {
         // This is different from DMG behavior
         // Keep existing length counter values
 
-        // Critical: Frame sequencer phase is cleared to 0 on power-on (0->1 transition of NR52.7)
-        // This is required for test 07 to pass
-        frameSequencer = 0;
+        // Critical: KameBoyColor sets frame_sequencer = 7 ONLY on transition from off to on
+        // This timing is required for test 07 to pass
+        if (!wasOn) {
+          frameSequencer = 7; // next step is 0
+        }
       }
       return;
     }
@@ -484,6 +487,18 @@ class APU {
   }
 
   void _tick(int cycles, int divRegister, bool doubleSpeed) {
+    // Frame sequencer is clocked by a falling edge on a bit of the DIV register.
+    // Bit 4 in normal speed, bit 5 in double speed.
+    // CRITICAL: This must happen BEFORE checking APU power state (KameBoyColor line 927-958)
+    int divBit = doubleSpeed ? 0x20 : 0x10;
+    bool fell = (lastDivAPU & divBit) != 0 && (divRegister & divBit) == 0;
+    lastDivAPU = divRegister;
+
+    if (fell) {
+      updateFrameSequencer();
+    }
+
+    // Now check if APU is powered on before processing audio
     if (!isInitialized || (nr52 & 0x80) == 0) return;
 
     accumulatedCycles += cycles;
@@ -493,22 +508,6 @@ class APU {
     channel2.tick(cycles);
     channel3.tick(cycles);
     channel4.tick(cycles);
-
-    // Frame sequencer: Use DIV-APU method for proper hardware timing
-    // Hardware uses FALLING EDGE detection on specific DIV bit
-    // Normal speed: bit 5 → 256 Hz falling edge, but we clock length at 256Hz (correct!)
-    // Double speed: bit 6 → 256 Hz falling edge, but we clock length at 256Hz (correct!)
-    // Wait, this gives 256 Hz frame sequencer, not 512 Hz...
-    // The frame sequencer runs at 512 Hz, but length counters clock at 256 Hz (every other step)
-    // So we need frame sequencer at 512 Hz → use bit 4 (normal) / bit 5 (double) with falling edge!
-    int divBitPosition = doubleSpeed ? 5 : 4;
-    int divAPUBit = (divRegister >> divBitPosition) & 1;
-
-    // Check for falling edge only
-    if (lastDivAPU == 1 && divAPUBit == 0) {
-      updateFrameSequencer();
-    }
-    lastDivAPU = divAPUBit;
 
     // Generate audio samples at exact intervals
     while (accumulatedCycles >= cyclesPerSample) {
@@ -531,53 +530,59 @@ class APU {
   }
 
   void updateFrameSequencer() {
-    // Set the frame sequencer value in all channels BEFORE updating
+    // KameBoyColor architecture: INCREMENT first, THEN process (line 928-931)
+    // This is critical for power-on timing: frame_sequencer = 7 means next step is 0
+
+    // Increment frame sequencer FIRST (KameBoyColor line 928-931)
+    frameSequencer = (frameSequencer + 1) % 8;
+
+    // Set the frame sequencer value in all channels AFTER incrementing
     channel1.setFrameSequencer(frameSequencer);
     channel2.setFrameSequencer(frameSequencer);
     channel3.setFrameSequencer(frameSequencer);
     channel4.setFrameSequencer(frameSequencer);
 
-    // Authentic Game Boy frame sequencer (8-step cycle):
-    // Step   Length Ctr  Vol Env     Sweep
-    // 0      Clock       -           -
-    // 1      -           -           -
-    // 2      Clock       -           Clock
-    // 3      -           -           -
-    // 4      Clock       -           -
-    // 5      -           -           -
-    // 6      Clock       -           Clock
-    // 7      -           Clock       -
-    switch (frameSequencer) {
-      case 0: // Step 0: Length counter only
-        updateLengthCounters();
-        break;
-      case 1: // Step 1: Nothing
-        break;
-      case 2: // Step 2: Length counter and sweep
-        updateLengthCounters();
-        channel1.updateSweep();
-        break;
-      case 3: // Step 3: Nothing
-        break;
-      case 4: // Step 4: Length counter only
-        updateLengthCounters();
-        break;
-      case 5: // Step 5: Nothing
-        break;
-      case 6: // Step 6: Length counter and sweep
-        updateLengthCounters();
-        channel1.updateSweep();
-        break;
-      case 7: // Step 7: Volume envelope only
-        updateEnvelopes();
-        break;
+    // Only perform actual updates if APU is powered on
+    if ((nr52 & 0x80) != 0) {
+      // Authentic Game Boy frame sequencer (8-step cycle):
+      // Step   Length Ctr  Vol Env     Sweep
+      // 0      Clock       -           -
+      // 1      -           -           -
+      // 2      Clock       -           Clock
+      // 3      -           -           -
+      // 4      Clock       -           -
+      // 5      -           -           -
+      // 6      Clock       -           Clock
+      // 7      -           Clock       -
+      switch (frameSequencer) {
+        case 0: // Step 0: Length counter only
+          updateLengthCounters();
+          break;
+        case 1: // Step 1: Nothing
+          break;
+        case 2: // Step 2: Length counter and sweep
+          updateLengthCounters();
+          channel1.updateSweep();
+          break;
+        case 3: // Step 3: Nothing
+          break;
+        case 4: // Step 4: Length counter only
+          updateLengthCounters();
+          break;
+        case 5: // Step 5: Nothing
+          break;
+        case 6: // Step 6: Length counter and sweep
+          updateLengthCounters();
+          channel1.updateSweep();
+          break;
+        case 7: // Step 7: Volume envelope only
+          updateEnvelopes();
+          break;
+      }
+
+      // Update NR52 channel status bits
+      updateNR52ChannelStatus();
     }
-
-    // Update frame sequencer step AFTER processing
-    frameSequencer = (frameSequencer + 1) % 8;
-
-    // Update NR52 channel status bits
-    updateNR52ChannelStatus();
   }
 
   void updateLengthCounters() {

@@ -68,6 +68,8 @@ class Channel3 {
     frequency = (nr34 & 0x07) << 8 | nr33;
 
     // KameBoyColor obscure behavior: Length counter extra clocking
+    // next_step_doesnt_update = (frame_sequencer & 1) == 0
+    // This means even steps (0,2,4,6) are the ones that DON'T update yet
     bool nextStepDoesntUpdate = (frameSequencer & 1) == 0;
     if (nextStepDoesntUpdate) {
       if (lengthEnable && !lengthEnabled && lengthCounter > 0) {
@@ -103,21 +105,24 @@ class Channel3 {
     enabled = dacEnabled;
 
     if (enabled) {
-      // Channel 3 uses different timing - KameBoyColor line 649
+      // Channel 3 uses different timing - KameBoyColor line 773
       frequencyTimer = 0x800 - frequency;
 
-      // CGB behavior: Add 6-cycle delay when wave channel is triggered
-      // This affects timing for reading wave RAM while channel is active
-      frequencyTimer += 6;
+      // KameBoyColor adds 6 cycles BEFORE shifting (line 780)
+      // But since their audio runs at half speed, they shift: (6 >> 1) = 3
+      // We need to determine if we should use 3 or 6 based on our clock rate
+      // For now, using 3 to match KameBoyColor's actual behavior
+      frequencyTimer += 3;
 
-      // KameBoyColor: waveform_idx starts at 0 (line 657)
+      // KameBoyColor: waveform_idx starts at 0 (line 781)
       sampleIndex = 0;
 
       // Length counter handling
       if (lengthCounter == 0) {
         lengthCounter = 256; // Wave channel has 256-step length counter
-        // Extra clocking if length enabled during length-clocking steps
-        if (lengthEnabled && (frameSequencer & 1) == 0) {
+        // Extra clocking if length enabled during even steps (next step doesn't update)
+        bool nextStepDoesntUpdate = (frameSequencer & 1) == 0;
+        if (lengthEnabled && nextStepDoesntUpdate) {
           lengthCounter--;
           if (lengthCounter == 0) {
             enabled = false;
@@ -143,7 +148,7 @@ class Channel3 {
     int loopCount = 0;
     while (frequencyTimer <= 0 && loopCount < 1000) { // Safety limit to prevent infinite loops
       // Reload with KameBoyColor formula (line 683)
-      int period = 0x800 - frequency;
+      int period = 2 * (0x800 - frequency);
       if (period <= 0) period = 1;
       frequencyTimer += period;
 

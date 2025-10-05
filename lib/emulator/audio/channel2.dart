@@ -125,8 +125,9 @@ class Channel2 {
       // Length counter handling
       if (lengthCounter == 0) {
         lengthCounter = 64; // Full length
-        // Extra clocking if length enabled during length-clocking steps
-        if (lengthEnabled && (frameSequencer & 1) == 0) {
+        // Extra clocking if length enabled during even steps (next step doesn't update)
+        bool nextStepDoesntUpdate = (frameSequencer & 1) == 0;
+        if (lengthEnabled && nextStepDoesntUpdate) {
           lengthCounter--;
           if (lengthCounter == 0) {
             enabled = false;

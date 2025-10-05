@@ -113,10 +113,12 @@ class Channel1 {
     frequency = (nr14 & 0x07) << 8 | nr13;
     updateFrequencyTimer();
 
-    // CGB obscure behavior: Length counter extra clocking during trigger
-    // Only clock length if next frame sequencer step would NOT clock length
-    bool nextStepClocksLength = (frameSequencer & 1) == 0;
-    if (!nextStepClocksLength && lengthEnable && !lengthEnabled && lengthCounter > 0) {
+    // CGB obscure behavior: Length counter extra clocking
+    // KameBoyColor: next_step_doesnt_update = (frame_sequencer & 1) == 0
+    // This means even steps (0,2,4,6) are the ones that DON'T update yet
+    // So we clock on even steps when enabling length
+    bool nextStepDoesntUpdate = (frameSequencer & 1) == 0;
+    if (nextStepDoesntUpdate && lengthEnable && !lengthEnabled && lengthCounter > 0) {
       lengthCounter--;
       if (lengthCounter == 0) {
         enabled = false;
@@ -131,8 +133,8 @@ class Channel1 {
     // If triggering with length 0, reload to maximum
     if ((value & 0x80) != 0 && lengthCounter == 0) {
       lengthCounter = 64;
-      // Extra clocking if we're about to clock length in the next step
-      if (lengthEnabled && nextStepClocksLength) {
+      // Extra clocking if we're about to clock length in the next step (even steps)
+      if (lengthEnabled && nextStepDoesntUpdate) {
         lengthCounter = 63;
       }
     }
@@ -165,8 +167,9 @@ class Channel1 {
       // Length counter handling
       if (lengthCounter == 0) {
         lengthCounter = 64; // Full length
-        // Extra clocking if length enabled during length-clocking steps
-        if (lengthEnabled && (frameSequencer & 1) == 0) {
+        // Extra clocking if length enabled during even steps (next step doesn't update)
+        bool nextStepDoesntUpdate = (frameSequencer & 1) == 0;
+        if (lengthEnabled && nextStepDoesntUpdate) {
           lengthCounter--;
           if (lengthCounter == 0) {
             enabled = false;
@@ -185,7 +188,7 @@ class Channel1 {
       if (sweepShift != 0) {
         int newFreq = calculateSweepFrequency();
         if (newFreq > 2047) {
-          enabled = false; // Disable channel immediately on overflow
+          enabled = false;
         }
       }
     }
@@ -249,29 +252,33 @@ class Channel1 {
     }
   }
 
-  // Update sweep (called by frame sequencer)
   void updateSweep() {
-    if (sweepEnabled && sweepPeriod > 0) {
-      sweepTimer--;
-      if (sweepTimer <= 0) {
-        sweepTimer = sweepPeriod == 0 ? 8 : sweepPeriod;
-        if (sweepShift != 0) {
-          int newFrequency = calculateSweepFrequency();
-          if (newFrequency <= 2047 && enabled) {
-            // Update internal frequency and shadow frequency
-            shadowFrequency = newFrequency & 0x7FF;
-            frequency = shadowFrequency;
-            updateFrequencyTimer();
+    if (!sweepEnabled || !enabled) return;
 
-            // Perform second calculation for overflow check
-            int overflowCheck = calculateSweepFrequency();
-            if (overflowCheck > 2047) {
-              enabled = false;
-            }
-          } else if (newFrequency > 2047) {
-            // First calculation overflowed, disable channel
+    sweepTimer--;
+
+    if (sweepTimer <= 0) {
+      if (sweepPeriod == 0) {
+        sweepTimer = 8;
+        return; // Do not perform sweep calculation when period is 0
+      }
+      
+      sweepTimer = sweepPeriod;
+
+      if (sweepShift != 0) {
+        int newFrequency = calculateSweepFrequency();
+        if (newFrequency <= 2047) {
+          shadowFrequency = newFrequency & 0x7FF;
+          frequency = shadowFrequency;
+          updateFrequencyTimer();
+
+          // Second overflow check
+          int overflowCheck = calculateSweepFrequency();
+          if (overflowCheck > 2047) {
             enabled = false;
           }
+        } else {
+          enabled = false;
         }
       }
     }
