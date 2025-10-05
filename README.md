@@ -2,7 +2,7 @@
 
 A high-performance GameBoy and GameBoy Color emulator built with Flutter and Dart.
 
-<img width="1096" height="1007" alt="image" src="https://github.com/user-attachments/assets/2961d4a4-dcf8-4cea-9c82-3b683f887aeb" />
+<img width="1096" height="1007" alt="image" src="https://github.com/user-attachments/assets/949ff682-c7f7-48ed-9caf-03c8c62005bb" />
 <img width="1096" height="1007" alt="image" src="https://github.com/user-attachments/assets/0abe6ead-89bf-471b-9032-6e91c6acde19" />
 <img width="1096" height="1007" alt="image" src="https://github.com/user-attachments/assets/bb096543-fd83-4c18-b230-1974bd90bbeb" />
 <img width="1096" height="1007" alt="image" src="https://github.com/user-attachments/assets/3a40c3fe-7b4c-4bcf-810f-8d47d523a9d4" />
