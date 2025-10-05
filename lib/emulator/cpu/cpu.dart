@@ -222,11 +222,12 @@ class CPU {
   ///
   /// @param delta CPU cycles elapsed since the last call to this method
   void updateInterrupts(int delta) {
-    // GB timers (DIV/TIMA) count T-cycles directly, so use delta as-is
-    // PPU and APU need delta adjusted for double speed (divide by 2)
+    // TIMA counts T-cycles directly (use delta as-is)
+    // PPU and APU count real time (divide by 2 in double speed)
+    // DIV counts T-cycles (use delta as-is) - it increments faster in double speed
     int ppuApuDelta = doubleSpeed ? (delta ~/ 2) : delta;
 
-    // The DIV register increments at 16KHz, and resets to 0 after
+    // The DIV register increments at T-cycle rate (16KHz in normal, 32KHz in double speed)
     divCycle += delta;
 
     if (divCycle >= 256) {

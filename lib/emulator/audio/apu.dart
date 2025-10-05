@@ -495,14 +495,17 @@ class APU {
     channel4.tick(cycles);
 
     // Frame sequencer: Use DIV-APU method for proper hardware timing
-    // CGB in normal speed mode: DIV bit 5 controls frame sequencer
-    // CGB in double speed mode: DIV bit 6 controls frame sequencer
-    int divBitPosition = doubleSpeed ? 6 : 5;
+    // Hardware uses FALLING EDGE detection on specific DIV bit
+    // Normal speed: bit 5 → 256 Hz falling edge, but we clock length at 256Hz (correct!)
+    // Double speed: bit 6 → 256 Hz falling edge, but we clock length at 256Hz (correct!)
+    // Wait, this gives 256 Hz frame sequencer, not 512 Hz...
+    // The frame sequencer runs at 512 Hz, but length counters clock at 256 Hz (every other step)
+    // So we need frame sequencer at 512 Hz → use bit 4 (normal) / bit 5 (double) with falling edge!
+    int divBitPosition = doubleSpeed ? 5 : 4;
     int divAPUBit = (divRegister >> divBitPosition) & 1;
 
-    // Check for edge of DIV-APU (any transition)
-    // Frame sequencer advances on BOTH rising and falling edges for 512 Hz
-    if (lastDivAPU != divAPUBit) {
+    // Check for falling edge only
+    if (lastDivAPU == 1 && divAPUBit == 0) {
       updateFrameSequencer();
     }
     lastDivAPU = divAPUBit;
