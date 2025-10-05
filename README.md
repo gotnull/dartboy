@@ -35,8 +35,9 @@ flutter run
 
 ## Test Results
 
-Blargg's hardware test suite results:
+### Blargg's Test Suite
 
+**CPU Instructions** (cpu_instrs) - All Passing ✅
 | Test | Status |
 |------|--------|
 | 01-special.gb | ✅ |
@@ -50,13 +51,33 @@ Blargg's hardware test suite results:
 | 09-op r,r.gb | ✅ |
 | 10-bit ops.gb | ✅ |
 | 11-op a,(hl).gb | ✅ |
-| instr_timing | ❌ |
-| interrupt_time | ❌ |
+
+**Other Tests**
+| Test | Status |
+|------|--------|
+| instr_timing | ✅ |
+| interrupt_time | ✅ |
+| halt_bug | ✅ |
 | mem_timing | ❌ |
 | mem_timing-2 | ❌ |
-| oam_bug | ❌ |
-| halt_bug.gb | ❌ |
-| cgb_sound | ❌ |
+| oam_bug | ⚠️ Partial |
+
+**Audio Tests**
+| Test | Status | Notes |
+|------|--------|-------|
+| cgb_sound | ⚠️ Partial | Tests 2, 6, 7 pass; Tests 1, 3, 4, 5 fail |
+| dmg_sound | ❌ | Not yet passing |
+
+### MagenTests - All Passing ✅
+
+Complete suite passing including:
+- Background & Window rendering
+- Sprite rendering and priorities
+- OAM and VRAM access
+- Color palette handling
+- DMA transfers
+- Timer and interrupt timing
+- Memory bank controllers
 
 ## Build Commands
 
@@ -76,13 +97,25 @@ flutter build web
 
 ## Status
 
-- ✅ CPU instruction set
-- ✅ MBC1/MBC2/MBC3/MBC5
-- ✅ Audio emulation
+### Emulation Accuracy
+- ✅ CPU instruction set (100% Blargg cpu_instrs)
+- ✅ Interrupt timing (interrupt_time, halt_bug)
+- ✅ Instruction timing (instr_timing)
+- ✅ PPU/Graphics (All MagenTests passing)
+- ✅ Memory Bank Controllers (MBC1/MBC2/MBC3/MBC5)
 - ✅ GameBoy Color support
-- ❌ Battery saves
-- ❌ Timing accuracy
-- ❌ Advanced test ROMs
+- ⚠️ Audio emulation (Partial - frame sequencer, length counters, basic channels working)
+- ❌ Memory timing edge cases
+- ❌ OAM bug reproduction
+- ❌ Battery saves persistence
+
+### Recent Audio Improvements
+- Frame sequencer synchronized with DIV register
+- Length counter obscure behavior implemented
+- Sweep unit with overflow checking
+- Volume envelope support
+- Proper DAC enable/disable behavior
+- CGB-specific timing adjustments
 
 ## License
 
