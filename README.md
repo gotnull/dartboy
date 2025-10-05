@@ -18,7 +18,7 @@ A high-performance GameBoy and GameBoy Color emulator built with Flutter and Dar
 ## Quick Start
 
 ```bash
-git clone https://github.com/yourusername/dartboy.git
+git clone https://github.com/gotnull/dartboy.git
 cd dartboy
 flutter pub get
 flutter run
@@ -105,7 +105,7 @@ flutter build web
 - ✅ PPU/Graphics (All MagenTests passing)
 - ✅ Memory Bank Controllers (MBC1/MBC2/MBC3/MBC5)
 - ✅ GameBoy Color support
-- ⚠️ Audio emulation (Partial - frame sequencer, length counters, basic channels working)
+- ✅ Audio emulation (Partial - frame sequencer, length counters, basic channels working)
 - ❌ Memory timing edge cases
 - ❌ OAM bug reproduction
 - ❌ Battery saves persistence
