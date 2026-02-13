@@ -159,7 +159,8 @@ ClearQueuedAudioDart get clearQueuedAudio {
 class APU {
   static const int frameSequencerRate = 512; // Hz
   static const int defaultSampleRate = 44100; // SDL output rate
-  static const int internalSampleRate = 32768; // Game Boy internal rate (CPU/128)
+  static const int internalSampleRate =
+      32768; // Game Boy internal rate (CPU/128)
   static const int defaultBufferSize = 1024;
   static const int defaultChannels = 2;
   static const double cpuFrequency = 4194304.0; // Game Boy CPU frequency
@@ -169,7 +170,8 @@ class APU {
   final int channels = 2;
 
   int cyclesPerSample;
-  static const int cyclesPerFrameSequencer = 8192; // 4194304 / 512 = exact timing
+  static const int cyclesPerFrameSequencer =
+      8192; // 4194304 / 512 = exact timing
   int accumulatedCycles = 0;
   int frameSequencerCycles = 0;
   int frameSequencer = 0;
@@ -198,7 +200,7 @@ class APU {
   // Mobile audio system
   MobileAudio? _mobileAudio;
   bool get _isMobile => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
-  
+
   // Audio performance optimization
   int _audioSampleCounter = 0;
 
@@ -235,11 +237,9 @@ class APU {
     address &= 0xFFFF;
 
     // Handle wave RAM reads first - always accessible regardless of APU power
-    if (address >= 0xFF30 && address <= 0xFF3F) {
+    if (address >= 0x30 && address <= 0x3F) {
       return channel3.readWaveformRAM(address);
     }
-
-    
 
     switch (address) {
       case MemoryRegisters.nr10:
@@ -291,24 +291,24 @@ class APU {
         return (nr52 & 0x80) |
             0x70 |
             channelStatus; // Bit 7 = power, bits 4-6 = 1, bits 0-3 = channel status
-      case 0xFF15: // Unused register between NR14 and NR21
+      case 0x15: // Unused register between NR14 and NR21
         return 0xFF;
-      case 0xFF1F: // Unused register between NR34 and NR41
+      case 0x1F: // Unused register between NR34 and NR41
         return 0xFF;
       // Unused registers between NR52 and Wave RAM
-      case 0xFF27:
-      case 0xFF28:
-      case 0xFF29:
-      case 0xFF2A:
-      case 0xFF2B:
-      case 0xFF2C:
-      case 0xFF2D:
-      case 0xFF2E:
-      case 0xFF2F:
+      case 0x27:
+      case 0x28:
+      case 0x29:
+      case 0x2A:
+      case 0x2B:
+      case 0x2C:
+      case 0x2D:
+      case 0x2E:
+      case 0x2F:
         return 0xFF;
       default:
         // Only print unknown register messages for addresses that should be audio registers
-        if (address >= 0xFF10 && address <= 0xFF3F) {
+        if (address >= 0x10 && address <= 0x3F) {
           print("Unknown audio register read: 0x${address.toRadixString(16)}");
         }
         return 0xFF; // Return 0xFF for unmapped addresses
@@ -357,7 +357,7 @@ class APU {
     }
 
     // Handle wave RAM writes first - always accessible regardless of APU power
-    if (address >= 0xFF30 && address <= 0xFF3F) {
+    if (address >= 0x30 && address <= 0x3F) {
       channel3.writeWaveformRAM(address, value);
       return;
     }
@@ -428,25 +428,15 @@ class APU {
         nr51 = value;
         break;
       case MemoryRegisters.nr52:
-        nr52 = (value & 0x80) | (nr52 & 0x7F);
-        if ((value & 0x80) == 0) {
-          // If master sound is disabled, reset all channels
-          channel1.reset();
-          channel2.reset();
-          channel3.reset();
-          channel4.reset();
-          nr50 = 0;
-          nr51 = 0;
-          updateVolumes();
-        }
+        // NR52 is handled at the top of writeNR - this case should not be reached
         break;
-      case 0xFF15: // Unused register between NR14 and NR20 - ignore writes
+      case 0x15: // Unused register between NR14 and NR20 - ignore writes
         break;
-      case 0xFF1F: // Unused register between NR24 and NR30 - ignore writes
+      case 0x1F: // Unused register between NR24 and NR30 - ignore writes
         break;
       default:
         // Only print unknown register messages for addresses that should be audio registers
-        if (address >= 0xFF10 && address <= 0xFF3F) {
+        if (address >= 0x10 && address <= 0x3F) {
           print(
               "Unknown audio register write: 0x${address.toRadixString(16)} = $value");
         }
@@ -641,20 +631,19 @@ class APU {
   double _rightHighPassState = 0.0;
   double _lastLeftSample = 0.0;
   double _lastRightSample = 0.0;
-  
+
   // Update NR52 channel status bits based on channel enabled states
   void updateNR52ChannelStatus() {
     int channelStatus = (nr52 & 0x80); // Keep APU enabled bit
     channelStatus |= 0x70; // Bits 4-6 always read as 1
-    
+
     if (channel1.enabled) channelStatus |= 0x01;
     if (channel2.enabled) channelStatus |= 0x02;
     if (channel3.enabled) channelStatus |= 0x04;
     if (channel4.enabled) channelStatus |= 0x08;
-    
+
     nr52 = channelStatus;
   }
-
 
   List<int> mixAudioChannels() {
     // Get raw digital channel outputs (0-15 range)
@@ -671,27 +660,28 @@ class APU {
 
     // Convert digital values through DACs (0-15) -> (-1.0 to +1.0)
     // Pan Docs: "Digital 0 maps to analog 1, digital 15 maps to analog -1" (negative slope)
-    double ch1Analog = 1.0 - (ch1Digital / 7.5);
-    double ch2Analog = 1.0 - (ch2Digital / 7.5);
-    double ch3Analog = 1.0 - (ch3Digital / 7.5);
-    double ch4Analog = 1.0 - (ch4Digital / 7.5);
+    // When DAC is disabled, output is 0.0 (no signal). When DAC is on but channel off, DAC(0) = +1.0.
+    double ch1Analog = channel1.dacEnabled ? (1.0 - (ch1Digital / 7.5)) : 0.0;
+    double ch2Analog = channel2.dacEnabled ? (1.0 - (ch2Digital / 7.5)) : 0.0;
+    double ch3Analog = channel3.dacEnabled ? (1.0 - (ch3Digital / 7.5)) : 0.0;
+    double ch4Analog = channel4.dacEnabled ? (1.0 - (ch4Digital / 7.5)) : 0.0;
 
     // Mix channels according to NR51 panning
     double left = 0.0;
     double right = 0.0;
 
     // Channel routing per NR51 register
-    if ((nr51 & 0x10) != 0) left += ch1Analog;   // CH1 -> Left
-    if ((nr51 & 0x01) != 0) right += ch1Analog;  // CH1 -> Right
+    if ((nr51 & 0x10) != 0) left += ch1Analog; // CH1 -> Left
+    if ((nr51 & 0x01) != 0) right += ch1Analog; // CH1 -> Right
 
-    if ((nr51 & 0x20) != 0) left += ch2Analog;   // CH2 -> Left
-    if ((nr51 & 0x02) != 0) right += ch2Analog;  // CH2 -> Right
+    if ((nr51 & 0x20) != 0) left += ch2Analog; // CH2 -> Left
+    if ((nr51 & 0x02) != 0) right += ch2Analog; // CH2 -> Right
 
-    if ((nr51 & 0x40) != 0) left += ch3Analog;   // CH3 -> Left
-    if ((nr51 & 0x04) != 0) right += ch3Analog;  // CH3 -> Right
+    if ((nr51 & 0x40) != 0) left += ch3Analog; // CH3 -> Left
+    if ((nr51 & 0x04) != 0) right += ch3Analog; // CH3 -> Right
 
-    if ((nr51 & 0x80) != 0) left += ch4Analog;   // CH4 -> Left
-    if ((nr51 & 0x08) != 0) right += ch4Analog;  // CH4 -> Right
+    if ((nr51 & 0x80) != 0) left += ch4Analog; // CH4 -> Left
+    if ((nr51 & 0x08) != 0) right += ch4Analog; // CH4 -> Right
 
     // Apply master volume control (NR50)
     // Pan Docs: "Master volume is (volume + 1) / 8"
@@ -701,7 +691,8 @@ class APU {
     // High-pass filter for DC removal (authentic Game Boy)
     const double alpha = 0.9996;
     _leftHighPassState = alpha * (_leftHighPassState + left - _lastLeftSample);
-    _rightHighPassState = alpha * (_rightHighPassState + right - _lastRightSample);
+    _rightHighPassState =
+        alpha * (_rightHighPassState + right - _lastRightSample);
     _lastLeftSample = left;
     _lastRightSample = right;
 
@@ -709,8 +700,10 @@ class APU {
     // Game Boy can have up to 4 channels mixed, so range is roughly [-4.0, +4.0]
     // Scale to 16-bit range [-32768, +32767] with headroom to prevent clipping
     const double scalingFactor = 6144.0; // 32768 / 5.33 for headroom
-    int leftSample = (_leftHighPassState * scalingFactor).clamp(-32768, 32767).toInt();
-    int rightSample = (_rightHighPassState * scalingFactor).clamp(-32768, 32767).toInt();
+    int leftSample =
+        (_leftHighPassState * scalingFactor).clamp(-32768, 32767).toInt();
+    int rightSample =
+        (_rightHighPassState * scalingFactor).clamp(-32768, 32767).toInt();
 
     return [leftSample, rightSample];
   }

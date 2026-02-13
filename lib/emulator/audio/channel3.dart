@@ -29,7 +29,8 @@ class Channel3 {
   Channel3();
 
   // NR30: Sound ON/OFF
-  int readNR30() => (nr30 & 0x80) | 0x7F; // Only bit 7 readable, others read as 1
+  int readNR30() =>
+      (nr30 & 0x80) | 0x7F; // Only bit 7 readable, others read as 1
   void writeNR30(int value) {
     nr30 = value;
     dacEnabled = (nr30 & 0x80) != 0; // Bit 7 controls DAC
@@ -46,7 +47,8 @@ class Channel3 {
   }
 
   // NR32: Output Level
-  int readNR32() => (nr32 & 0x60) | 0x9F; // Only bits 5-6 readable, others read as 1
+  int readNR32() =>
+      (nr32 & 0x60) | 0x9F; // Only bits 5-6 readable, others read as 1
   void writeNR32(int value) {
     nr32 = value;
     volumeShift = (nr32 >> 5) & 0x03;
@@ -60,7 +62,8 @@ class Channel3 {
   }
 
   // NR34: Frequency High and Control
-  int readNR34() => (nr34 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
+  int readNR34() =>
+      (nr34 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
   void writeNR34(int value) {
     bool lengthEnable = (value & 0x40) != 0;
     nr34 = value;
@@ -97,7 +100,6 @@ class Channel3 {
     }
   }
 
-
   // Trigger the channel (on write to NR34 with bit 7 set)
   // Pan Docs: "Triggering a sound restarts it from the beginning"
   void trigger() {
@@ -105,17 +107,12 @@ class Channel3 {
     enabled = dacEnabled;
 
     if (enabled) {
-      // Channel 3 uses different timing - KameBoyColor line 773
-      frequencyTimer = 0x800 - frequency;
+      // Channel 3 period = 2 * (2048 - frequency). Add 6 T-cycle delay on trigger.
+      frequencyTimer = 2 * (2048 - frequency) + 6;
 
-      // KameBoyColor adds 6 cycles BEFORE shifting (line 780)
-      // But since their audio runs at half speed, they shift: (6 >> 1) = 3
-      // We need to determine if we should use 3 or 6 based on our clock rate
-      // For now, using 3 to match KameBoyColor's actual behavior
-      frequencyTimer += 3;
-
-      // KameBoyColor: waveform_idx starts at 0 (line 781)
+      // Reset sample index to 0 and read initial sample
       sampleIndex = 0;
+      currentSample = (waveformRAM[0] >> 4) & 0x0F; // High nibble of byte 0
 
       // Length counter handling
       if (lengthCounter == 0) {
@@ -132,49 +129,43 @@ class Channel3 {
     }
   }
 
-  // Update frequency timer - KameBoyColor Channel 3 style
+  // Update frequency timer - Channel 3 period formula
   void updateFrequencyTimer() {
-    frequencyTimer = 0x800 - frequency;
-    if (frequencyTimer <= 0) frequencyTimer = 1; // Ensure minimum period
+    frequencyTimer = 2 * (2048 - frequency);
+    if (frequencyTimer <= 0) frequencyTimer = 2;
   }
 
   // Update method called every CPU cycle - optimized for performance
-  // Update method - matches KameBoyColor Channel 3 exactly (lines 677-684)
+  // Update method - Channel 3 frequency timer
   void tick(int cycles) {
     if (!enabled) return;
 
-    // Channel 3 uses DOWN counting like KameBoyColor
     frequencyTimer -= cycles;
-    int loopCount = 0;
-    while (frequencyTimer <= 0 && loopCount < 1000) { // Safety limit to prevent infinite loops
-      // Reload with KameBoyColor formula (line 683)
-      int period = 2 * (0x800 - frequency);
-      if (period <= 0) period = 1;
+    while (frequencyTimer <= 0) {
+      // Reload with correct Channel 3 period: 2 * (2048 - frequency)
+      int period = 2 * (2048 - frequency);
+      if (period <= 0) period = 2;
       frequencyTimer += period;
 
       // Advance sample index and read new sample
       advanceSampleIndex();
-      loopCount++;
     }
   }
 
-  // Advance sample index - matches KameBoyColor exactly (lines 679-683)
+  // Advance sample index - 0-based (0-31)
   void advanceSampleIndex() {
-    // KameBoyColor waveform advance logic
-    if (sampleIndex == 32) {
-      sampleIndex = 1;
-    } else {
-      sampleIndex++;
-    }
+    // Advance to next sample position (0-31, wrapping)
+    sampleIndex = (sampleIndex + 1) & 31;
 
-    // Read sample using KameBoyColor formula (lines 690-695)
-    int sampleOffset = (sampleIndex - 1) ~/ 2;
+    // Read sample from wave RAM
+    // Even positions = high nibble, odd positions = low nibble
+    int sampleOffset = sampleIndex >> 1;
     int waveForm = waveformRAM[sampleOffset];
 
-    if (sampleIndex % 2 == 0) {
-      currentSample = waveForm & 0x0F; // Low nibble
-    } else {
+    if ((sampleIndex & 1) == 0) {
       currentSample = (waveForm >> 4) & 0x0F; // High nibble
+    } else {
+      currentSample = waveForm & 0x0F; // Low nibble
     }
   }
 
@@ -220,15 +211,11 @@ class Channel3 {
 
   // Read from Waveform RAM (0xFF30 - 0xFF3F)
   int readWaveformRAM(int address) {
-    int index = address - 0xFF30;
+    int index = address - 0x30;
 
     // Wave RAM corruption: if channel is playing, return the currently playing sample
-    // instead of the actual RAM contents
     if (enabled && dacEnabled) {
-      // Return the sample that the wave channel is currently reading
-      // This simulates the hardware bug where wave RAM reads are corrupted
-      // when the channel is actively playing
-      int currentByteIndex = (sampleIndex ~/ 2) % 16;
+      int currentByteIndex = (sampleIndex >> 1) & 0x0F;
       return waveformRAM[currentByteIndex];
     }
 
@@ -237,7 +224,7 @@ class Channel3 {
 
   // Write to Waveform RAM (0xFF30 - 0xFF3F)
   void writeWaveformRAM(int address, int value) {
-    int index = address - 0xFF30;
+    int index = address - 0x30;
     waveformRAM[index] = value & 0xFF;
   }
 

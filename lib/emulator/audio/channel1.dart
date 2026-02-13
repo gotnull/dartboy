@@ -20,7 +20,8 @@ class Channel1 {
   bool sweepNegate = false; // Sweep direction (false=increase, true=decrease)
   bool sweepEnabled = false; // Internal sweep enable flag
   int shadowFrequency = 0; // Shadow frequency for sweep calculations
-  bool sweepNegateModeUsed = false; // Tracks if negate mode has been used (obscure behavior)
+  bool sweepNegateModeUsed =
+      false; // Tracks if negate mode has been used (obscure behavior)
 
   // Envelope state
   int envelopeTimer = 0; // Envelope timer
@@ -34,10 +35,10 @@ class Channel1 {
 
   // Duty cycle patterns (Pan Docs specification)
   static const List<List<int>> dutyPatterns = [
-    [0, 0, 0, 0, 0, 0, 0, 1], // 12.5% (one high bit)
-    [1, 0, 0, 0, 0, 0, 0, 1], // 25% (two high bits)
-    [1, 0, 0, 0, 0, 1, 1, 1], // 50% (four high bits)
-    [0, 1, 1, 1, 1, 1, 1, 0], // 75% (six high bits - inverted 25%)
+    [0, 0, 0, 0, 0, 0, 0, 1], // 12.5%
+    [0, 0, 0, 0, 0, 0, 1, 1], // 25%
+    [0, 0, 0, 0, 1, 1, 1, 1], // 50%
+    [1, 1, 1, 1, 1, 1, 0, 0], // 75%
   ];
 
   // Duty cycle index (0-3)
@@ -47,7 +48,8 @@ class Channel1 {
   Channel1();
 
   // NR10: Sweep Register
-  int readNR10() => (nr10 & 0x7F) | 0x80; // Only bits 0-6 writable, bit 7 always 1
+  int readNR10() =>
+      (nr10 & 0x7F) | 0x80; // Only bits 0-6 writable, bit 7 always 1
   void writeNR10(int value) {
     bool oldSweepNegate = sweepNegate;
     nr10 = value;
@@ -75,7 +77,8 @@ class Channel1 {
   }
 
   // NR11: Sound Length / Waveform Duty
-  int readNR11() => (nr11 & 0xC0) | 0x3F; // Only bits 6-7 readable, bits 0-5 always 1
+  int readNR11() =>
+      (nr11 & 0xC0) | 0x3F; // Only bits 6-7 readable, bits 0-5 always 1
   void writeNR11(int value) {
     nr11 = value;
     dutyCycle = (nr11 >> 6) & 0x03;
@@ -87,7 +90,7 @@ class Channel1 {
   int readNR12() => nr12; // Returns stored value per KameBoyColor
   void writeNR12(int value) {
     nr12 = value;
-    volume = (nr12 >> 4) & 0x0F;
+    // Volume is NOT set here - only loaded from NR12 on trigger
     envelopeIncrease = (nr12 & 0x08) != 0;
     envelopePeriod = nr12 & 0x07;
     dacEnabled = (nr12 & 0xF8) != 0; // DAC enabled if bits 3-7 are not all zero
@@ -105,7 +108,8 @@ class Channel1 {
   }
 
   // NR14: Frequency High and Control
-  int readNR14() => (nr14 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
+  int readNR14() =>
+      (nr14 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
   void writeNR14(int value) {
     bool lengthEnable = (value & 0x40) != 0;
     nr14 = value;
@@ -118,7 +122,10 @@ class Channel1 {
     // This means even steps (0,2,4,6) are the ones that DON'T update yet
     // So we clock on even steps when enabling length
     bool nextStepDoesntUpdate = (frameSequencer & 1) == 0;
-    if (nextStepDoesntUpdate && lengthEnable && !lengthEnabled && lengthCounter > 0) {
+    if (nextStepDoesntUpdate &&
+        lengthEnable &&
+        !lengthEnabled &&
+        lengthCounter > 0) {
       lengthCounter--;
       if (lengthCounter == 0) {
         enabled = false;
@@ -151,7 +158,6 @@ class Channel1 {
   void trigger() {
     // Channel is enabled only if DAC is enabled
     enabled = dacEnabled;
-
 
     if (enabled) {
       // Reset frequency timer - back to working formula
@@ -200,26 +206,19 @@ class Channel1 {
     if (frequencyTimer <= 0) frequencyTimer = 4;
   }
 
-  // Frequency timer - back to DOWN counting to avoid lockups
+  // Frequency timer - 0-based duty step, counts down
   void tick(int cycles) {
     if (!enabled) return;
 
-    // Back to DOWN counting but with correct period calculation
     frequencyTimer -= cycles;
-    int loopCount = 0;
-    while (frequencyTimer <= 0 && loopCount < 1000) { // Safety limit to prevent infinite loops
-      // KameBoyColor waveform advance logic
-      if (dutyStep == 8) {
-        dutyStep = 1;
-      } else {
-        dutyStep++;
-      }
+    while (frequencyTimer <= 0) {
+      // Advance duty step (0-7, wrapping)
+      dutyStep = (dutyStep + 1) & 7;
 
       // Use proper Game Boy frequency formula
       int period = 4 * (2048 - frequency);
       if (period <= 0) period = 4;
       frequencyTimer += period;
-      loopCount++;
     }
   }
 
@@ -233,21 +232,17 @@ class Channel1 {
     }
   }
 
-  // Update envelope - matches KameBoyColor exactly (lines 525-538)
+  // Update envelope - Pan Docs accurate
   void updateEnvelope() {
-    // KameBoyColor checks volume_pace != 0, not envelopePeriod
     if (envelopePeriod != 0 && enabled) {
       envelopeTimer--;
       if (envelopeTimer <= 0) {
         envelopeTimer = envelopePeriod;
         if (envelopeIncrease) {
-          volume++;
+          if (volume < 15) volume++;
         } else {
-          if (volume != 0) {
-            volume--;
-          }
+          if (volume > 0) volume--;
         }
-        volume &= 0x0F; // KameBoyColor line 537
       }
     }
   }
@@ -262,7 +257,7 @@ class Channel1 {
         sweepTimer = 8;
         return; // Do not perform sweep calculation when period is 0
       }
-      
+
       sweepTimer = sweepPeriod;
 
       if (sweepShift != 0) {
@@ -306,10 +301,8 @@ class Channel1 {
     // If channel or DAC is disabled, output 0
     if (!enabled || !dacEnabled) return 0;
 
-    // Safe duty pattern indexing - ensure index is always 0-7
-    int index = (dutyStep - 1) % 8;
-    if (index < 0) index = 7; // Handle dutyStep = 0 case
-    int dutyBit = dutyPatterns[dutyCycle][index];
+    // 0-based duty step index (0-7)
+    int dutyBit = dutyPatterns[dutyCycle][dutyStep];
 
     // Output volume when duty is high, 0 when low
     return dutyBit == 1 ? volume : 0;

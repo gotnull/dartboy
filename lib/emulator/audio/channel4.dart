@@ -39,7 +39,7 @@ class Channel4 {
   int readNR42() => nr42; // Returns stored value per KameBoyColor
   void writeNR42(int value) {
     nr42 = value;
-    volume = (nr42 >> 4) & 0x0F;
+    // Volume is NOT set here - only loaded from NR42 on trigger
     envelopeIncrease = (nr42 & 0x08) != 0;
     envelopePeriod = nr42 & 0x07;
     dacEnabled = (nr42 & 0xF8) != 0;
@@ -58,7 +58,8 @@ class Channel4 {
   }
 
   // NR44: Counter/Consecutive; Initial
-  int readNR44() => (nr44 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
+  int readNR44() =>
+      (nr44 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
   void writeNR44(int value) {
     bool lengthEnable = (value & 0x40) != 0;
     nr44 = value;
@@ -159,21 +160,16 @@ class Channel4 {
     if (frequencyTimer <= 0) frequencyTimer = 8; // Ensure minimum period
   }
 
-  // Channel 4 timing - matches KameBoyColor exactly (lines 758-789)
-  // Note: This will need global audio cycle counter from APU
+  // Channel 4 frequency timer
   void tick(int cycles) {
     if (!enabled) return;
 
-    // KameBoyColor uses different timing - only clock on specific intervals
-    // This is a simplified version - proper implementation needs APU cycle counter
     frequencyTimer -= cycles;
-    int loopCount = 0;
-    while (frequencyTimer <= 0 && loopCount < 1000) { // Safety limit to prevent infinite loops
+    while (frequencyTimer <= 0) {
       int period = getFrequencyTimerPeriod();
-      if (period <= 0) period = 1;
+      if (period <= 0) period = 8;
       frequencyTimer += period;
       clockLFSR();
-      loopCount++;
     }
   }
 
@@ -209,21 +205,17 @@ class Channel4 {
     }
   }
 
-  // Update envelope - matches KameBoyColor exactly (lines 742-755)
+  // Update envelope - Pan Docs accurate
   void updateEnvelope() {
-    // KameBoyColor checks volume_pace != 0
     if (envelopePeriod != 0 && enabled) {
       envelopeTimer--;
       if (envelopeTimer <= 0) {
         envelopeTimer = envelopePeriod;
         if (envelopeIncrease) {
-          volume++;
+          if (volume < 15) volume++;
         } else {
-          if (volume != 0) {
-            volume--;
-          }
+          if (volume > 0) volume--;
         }
-        volume &= 0x0F; // KameBoyColor line 754
       }
     }
   }
@@ -234,8 +226,8 @@ class Channel4 {
     // If channel or DAC is disabled, output 0
     if (!enabled || !dacEnabled) return 0;
 
-    // KameBoyColor Channel 4 output (line 789)
-    return (lfsr & 1) * volume;
+    // Pan Docs: "The waveform output is the complement of bit 0 of the LFSR"
+    return ((~lfsr) & 1) * volume;
   }
 
   // Reset the channel

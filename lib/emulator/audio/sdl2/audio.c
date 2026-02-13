@@ -9,8 +9,10 @@ static SDL_AudioDeviceID audio_device;
 // SDL audio specification
 static SDL_AudioSpec audio_spec;
 
-// Audio buffer management - increased for smoother playback
-static const int MAX_QUEUED_AUDIO = 32768; // Maximum bytes to queue (increased from 8192)
+// Audio buffer management
+// At 44100 Hz stereo 16-bit = 176400 bytes/sec.
+// Allow ~0.5s of audio queued before dropping to prevent latency buildup.
+static const int MAX_QUEUED_AUDIO = 88200;
 
 int is_audio_device_active()
 {
@@ -52,18 +54,16 @@ void stream_audio(const void *buffer, int length)
 {
   // Check if we have too much audio queued to prevent excessive latency
   Uint32 queued_bytes = SDL_GetQueuedAudioSize(audio_device);
-  
-  // If we have too much audio queued, clear some of it to prevent lag
-  if (queued_bytes > MAX_QUEUED_AUDIO) {
-    SDL_ClearQueuedAudio(audio_device);
+
+  // If queue is too full, drop this sample rather than clearing the entire
+  // queue (which causes audible pops). The queue will drain naturally.
+  if (queued_bytes > MAX_QUEUED_AUDIO)
+  {
+    return;
   }
-  
+
   // Queue the new audio data
-  if (SDL_QueueAudio(audio_device, buffer, length) < 0) {
-    // If queueing fails, we might need to clear the queue and try again
-    SDL_ClearQueuedAudio(audio_device);
-    SDL_QueueAudio(audio_device, buffer, length);
-  }
+  SDL_QueueAudio(audio_device, buffer, length);
 }
 
 // Terminate audio and clean up SDL

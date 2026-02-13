@@ -185,7 +185,8 @@ class Memory {
     if (address >= MemoryAddresses.cartridgeRomSwitchableStart &&
         address < MemoryAddresses.cartridgeRomEnd) {
       // Temporary fix to prevent RangeError
-      romPageStart = min(romPageStart, cpu.cartridge.data.length - Memory.romPageSize);
+      romPageStart =
+          min(romPageStart, cpu.cartridge.data.length - Memory.romPageSize);
       return cpu.cartridge.data[
           romPageStart + address - MemoryAddresses.cartridgeRomSwitchableStart];
     }
@@ -288,15 +289,18 @@ class Memory {
           if (dma == null) {
             // Get the configuration of the H-DMA transfer
             int length = ((value & 0x7f) + 1) * 0x10;
-            int source = ((registers[0x51] & 0xff) << 8) | (registers[0x52] & 0xF0);
+            int source =
+                ((registers[0x51] & 0xff) << 8) | (registers[0x52] & 0xF0);
             int destination =
                 ((registers[0x53] & 0x1f) << 8) | (registers[0x54] & 0xF0);
 
             int ly = cpu.mmu.readRegisterByte(MemoryRegisters.ly);
-            print('HDMA initiated at LY=$ly: source=${source.toRadixString(16)}, dest=${destination.toRadixString(16)}, length=${length.toRadixString(16)}, halted=${cpu.halted}, HDMA5 will be set to ${((length ~/ 0x10 - 1) & 0xFF).toRadixString(16)}');
+            print(
+                'HDMA initiated at LY=$ly: source=${source.toRadixString(16)}, dest=${destination.toRadixString(16)}, length=${length.toRadixString(16)}, halted=${cpu.halted}, HDMA5 will be set to ${((length ~/ 0x10 - 1) & 0xFF).toRadixString(16)}');
             dma = DMA(this, source, destination, length, cpu.clocks);
             registers[MemoryRegisters.hdma] = (length ~/ 0x10 - 1) & 0xFF;
-            print('HDMA5 is now ${registers[MemoryRegisters.hdma].toRadixString(16)}');
+            print(
+                'HDMA5 is now ${registers[MemoryRegisters.hdma].toRadixString(16)}');
           }
         } else {
           // Writing 0 to bit 7 cancels active H-Blank transfer or starts general DMA
@@ -307,12 +311,14 @@ class Memory {
           } else {
             // General DMA (immediate transfer)
             int length = ((value & 0x7f) + 1) * 0x10;
-            int source = ((registers[0x51] & 0xff) << 8) | (registers[0x52] & 0xF0);
+            int source =
+                ((registers[0x51] & 0xff) << 8) | (registers[0x52] & 0xF0);
             int destination =
                 ((registers[0x53] & 0x1f) << 8) | (registers[0x54] & 0xF0);
 
             for (int i = 0; i < length; i++) {
-              vram[vramPageStart + destination + i] = readByte(source + i) & 0xFF;
+              vram[vramPageStart + destination + i] =
+                  readByte(source + i) & 0xFF;
             }
             registers[MemoryRegisters.hdma] = 0xFF;
           }
@@ -367,9 +373,11 @@ class Memory {
       }
       registers[address] = reg;
     }
-    // Audio Registers (NR10-NR52)
-    else if (address >= MemoryRegisters.nr10 &&
-        address <= MemoryRegisters.nr52) {
+    // Audio Registers (NR10-NR52) and Wave RAM (0xFF30-0xFF3F)
+    else if ((address >= MemoryRegisters.nr10 &&
+            address <= MemoryRegisters.nr52) ||
+        (address >= MemoryRegisters.waveRamStart &&
+            address <= MemoryRegisters.waveRamEnd)) {
       cpu.apu.writeNR(address, value);
     }
     // OAM DMA transfer
@@ -457,9 +465,11 @@ class Memory {
         return cpu.ppu.getSpritePalette(currentRegister);
       }
     }
-    // Audio registers (NR10-NR52): Channel and Sound Control
-    else if (address >= MemoryRegisters.nr10 &&
-        address <= MemoryRegisters.nr52) {
+    // Audio registers (NR10-NR52) and Wave RAM (0xFF30-0xFF3F)
+    else if ((address >= MemoryRegisters.nr10 &&
+            address <= MemoryRegisters.nr52) ||
+        (address >= MemoryRegisters.waveRamStart &&
+            address <= MemoryRegisters.waveRamEnd)) {
       return cpu.apu.readNR(address);
     }
 
