@@ -44,9 +44,24 @@ class MBC1 extends MBC {
 
   /// Select the ROM bank to be used.
   void selectROMBank(int bank) {
-    // Not usable banks, use the next bank available.
+    // MBC1 hardware quirk: the values 0x00 / 0x20 / 0x40 / 0x60 select
+    // bank 0x01 / 0x21 / 0x41 / 0x61 instead, so bank 0 is never
+    // visible in the switchable region.
     if (bank == 0x00 || bank == 0x20 || bank == 0x40 || bank == 0x60) {
       bank++;
+    }
+
+    // Mask the bank index to the actual cartridge size. MBC1 cartridges
+    // always have a power-of-two bank count, and real hardware ignores the
+    // high bits of the bank register that don't address ROM. Without this
+    // mask, requesting bank N on a smaller cartridge runs off the end of the
+    // data array (or, worse, aliases the request to whatever bank we happen
+    // to clamp to). The Blargg cgb_sound multi-rom dispatcher relies on
+    // this mask to stop after test 12 — it bumps the bank past the cart
+    // size and expects to read NOPs (bank 0) so it knows to halt.
+    int numBanks = cpu.cartridge.romBanks;
+    if (numBanks > 0) {
+      bank &= numBanks - 1;
     }
 
     romBank = bank;
@@ -82,12 +97,13 @@ class MBC1 extends MBC {
         selectROMBank((romBank & 0x1F) | ((value & 0x03) << 4));
       }
     }
-    // Selects whether the two bits of the above register should be used as upper two bits of the ROM Bank, or as RAM Bank Number.
+    // Selects whether the two bits of the above register should be used as
+    // upper two bits of the ROM Bank, or as RAM Bank Number. The mode bit is
+    // always writable on MBC1; whether it has any effect depends on the
+    // cartridge configuration, but emulation should always honour the write.
     else if (address >= MBC1.selectMemoryModeStart &&
         address < MBC1.selectMemoryModeEnd) {
-      if (cpu.cartridge.ramBanks == 3) {
-        modeSelect = (value & 0x01);
-      }
+      modeSelect = value & 0x01;
     }
     // This area is used to address external RAM in the cartridge.
     else if (address >= MemoryAddresses.switchableRamStart &&

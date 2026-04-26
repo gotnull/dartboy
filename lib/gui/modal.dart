@@ -1,4 +1,5 @@
-import 'package:flutter/cupertino.dart';
+import 'package:flutter/widgets.dart';
+import 'package:forui/forui.dart';
 
 class Modal {
   /// Show a alert modal
@@ -10,22 +11,23 @@ class Modal {
     String message, {
     required Function onCancel,
   }) {
-    showCupertinoDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return CupertinoAlertDialog(
-              title: Text(title),
-              actions: [
-                CupertinoDialogAction(
-                  isDestructiveAction: true,
-                  onPressed: () {
-                    Navigator.pop(context);
-                    onCancel();
-                  },
-                  child: const Text("OK"),
-                )
-              ],
-              content: Text(message));
-        });
+    showFDialog(
+      context: context,
+      builder: (context, style, animation) => FDialog(
+        style: style,
+        animation: animation,
+        title: Text(title),
+        body: Text(message),
+        actions: [
+          FButton(
+            onPress: () {
+              Navigator.pop(context);
+              onCancel();
+            },
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
   }
 }

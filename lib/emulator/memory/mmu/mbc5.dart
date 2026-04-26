@@ -28,12 +28,20 @@ class MBC5 extends MBC {
     mapRom(romBank);
   }
 
-  /// Select ROM bank to be used.
+  /// Select the ROM bank to be used in the switchable region.
+  ///
+  /// Unlike MBC1, MBC5 has no 0→1 substitution: bank 0 maps to ROM bank 0
+  /// (i.e. the upper 16 KB mirrors the fixed bank when 0 is written).
   void mapRom(int bank) {
     romBank = bank;
-    // Ensure we don't go beyond the available ROM banks
-    int maxBank = (cpu.cartridge.data.length ~/ Memory.romPageSize) - 1;
-    int actualBank = bank.clamp(0, maxBank);
+    // Mask to the cartridge's actual bank count so out-of-range writes wrap
+    // exactly as the chip's address pins do, instead of silently clamping.
+    int numBanks = cpu.cartridge.romBanks;
+    int actualBank = numBanks > 0 ? bank & (numBanks - 1) : bank;
+    int totalBanks = cpu.cartridge.data.length ~/ Memory.romPageSize;
+    if (totalBanks > 0 && actualBank >= totalBanks) {
+      actualBank %= totalBanks;
+    }
     romPageStart = Memory.romPageSize * actualBank;
   }
 
@@ -42,19 +50,20 @@ class MBC5 extends MBC {
     address &= 0xFFFF;
 
     if (address >= MBC1.ramDisableStart && address < MBC1.ramDisableEnd) {
-      if (cpu.cartridge.ramBanks > 0) {
-        ramEnabled = (value & 0x0F) == 0x0A;
-      }
+      // MBC5 RAM-enable is *strict*: only the exact value 0x0A enables RAM
+      // (unlike MBC1/2/3, where any value with low nibble 0xA works). Some
+      // games rely on this strictness — e.g. they write garbage like 0xBA
+      // and expect RAM to remain disabled.
+      ramEnabled = value == 0x0A;
     } else if (address >= 0x2000 && address < 0x3000) {
-      // The lower 8 bits of the ROM bank number goes here. Writing 0 will indeed give bank 0 on MBC5, unlike other MBCs.
+      // Lower 8 bits of ROM bank number. Writing 0 selects bank 0 (no quirk).
       int newBank = (romBank & 0x100) | (value & 0xFF);
       mapRom(newBank);
     } else if (address >= 0x3000 && address < 0x4000) {
-      // The 9th bit of the ROM bank number goes here.
+      // Bit 8 of ROM bank number.
       int newBank = (romBank & 0xff) | ((value & 0x1) << 8);
       mapRom(newBank);
     } else if (address >= 0x4000 && address < 0x6000) {
-      // Mask RAM bank to wrap around based on actual RAM banks available
       int ramBank = value & 0x0F;
       if (cpu.cartridge.ramBanks > 0) {
         ramBank = ramBank % cpu.cartridge.ramBanks;

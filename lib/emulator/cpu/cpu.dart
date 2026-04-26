@@ -41,7 +41,12 @@ class CPU {
   /// Whether the CPU should trigger interrupt handlers.
   bool interruptsEnabled;
 
-  bool enableInterruptsNextCycle;
+  /// Pan Docs: the EI instruction defers enabling IME until the end of the
+  /// instruction *after* EI. Setting this flag from EI causes the next call
+  /// to [cycle] to consume the deferral and only then promote it to
+  /// [interruptsEnabled] — matching the one-instruction delay required by
+  /// the canonical `EI; HALT` idiom.
+  bool eiPending;
 
   /// Halt bug flag - when true, PC increment is skipped for next instruction
   bool haltBugTriggered = false;
@@ -80,6 +85,14 @@ class CPU {
   /// The current cycle of the TIMA register.
   int timerCycle = 0;
 
+  /// T-cycles remaining before a pending TIMA overflow reloads TMA into TIMA
+  /// and raises the timer interrupt. Real hardware has a 4 T-cycle window
+  /// between TIMA wrapping to $00 and the actual reload — during the window
+  /// TIMA reads as $00 and a CPU write to TIMA can still cancel the reload.
+  /// `0` means "no pending reload"; any positive value counts down per
+  /// `updateInterrupts` call until the reload happens.
+  int timaReloadDelay = 0;
+
   /// Buttons of the Gameboy, the index stored in the Gamepad class corresponds to the position here
   List<bool> buttons = List.filled(8, false);
 
@@ -115,7 +128,7 @@ class CPU {
   CPU(this.cartridge)
       : halted = false,
         interruptsEnabled = false,
-        enableInterruptsNextCycle = false,
+        eiPending = false,
         haltBugTriggered = false,
         doubleSpeed = false {
     mmu = cartridge.createController(this);
@@ -237,6 +250,19 @@ class CPU {
           MemoryRegisters.div, mmu.readRegisterByte(MemoryRegisters.div) + 1);
     }
 
+    // Drain any pending TIMA reload window first. Real hardware delays the
+    // TMA→TIMA reload (and the timer interrupt) by 4 T-cycles after the
+    // overflow; during that window TIMA reads as $00.
+    if (timaReloadDelay > 0) {
+      timaReloadDelay -= delta;
+      if (timaReloadDelay <= 0) {
+        timaReloadDelay = 0;
+        mmu.writeRegisterByte(MemoryRegisters.tima,
+            mmu.readRegisterByte(MemoryRegisters.tma) & 0xFF);
+        setInterruptTriggered(MemoryRegisters.timerOverflowBit);
+      }
+    }
+
     // The Timer is similar to DIV, except that when it overflows it triggers an interrupt
     int tac = mmu.readRegisterByte(MemoryRegisters.tac);
 
@@ -244,43 +270,27 @@ class CPU {
     if ((tac & 0x4) != 0) {
       timerCycle += delta;
 
-      // The Timer has a settable frequency
-      int timerPeriod = 0;
-
+      int timerPeriod;
       switch (tac & 0x3) {
-        // 4096 Hz
-        case 0x0:
-          timerPeriod = frequency ~/ 4096;
-          break;
-
-        // 262144 Hz
-        case 0x1:
-          timerPeriod = frequency ~/ 262144;
-          break;
-
-        // 65536 Hz
-        case 0x2:
-          timerPeriod = frequency ~/ 65536;
-          break;
-
-        // 16384 Hz
-        case 0x3:
-          timerPeriod = frequency ~/ 16384;
-          break;
+        case 0x0: timerPeriod = frequency ~/ 4096; break;
+        case 0x1: timerPeriod = frequency ~/ 262144; break;
+        case 0x2: timerPeriod = frequency ~/ 65536; break;
+        case 0x3: timerPeriod = frequency ~/ 16384; break;
+        default: timerPeriod = frequency ~/ 4096;
       }
 
       while (timerCycle >= timerPeriod) {
         timerCycle -= timerPeriod;
 
-        // And it resets to a specific value
         int tima = (mmu.readRegisterByte(MemoryRegisters.tima) & 0xFF) + 1;
-
         if (tima > 0xFF) {
-          tima = mmu.readRegisterByte(MemoryRegisters.tma) & 0xFF;
-          setInterruptTriggered(MemoryRegisters.timerOverflowBit);
+          // Overflow: TIMA wraps to $00 and stays there for 4 T-cycles
+          // before TMA is loaded and the timer interrupt fires.
+          mmu.writeRegisterByte(MemoryRegisters.tima, 0);
+          timaReloadDelay = 4;
+        } else {
+          mmu.writeRegisterByte(MemoryRegisters.tima, tima & 0xFF);
         }
-
-        mmu.writeRegisterByte(MemoryRegisters.tima, tima & 0xFF);
       }
     }
 
@@ -395,26 +405,30 @@ class CPU {
   int cycle() {
     cycles++;
 
+    // Capture-and-clear the EI deferral. The instruction-after-EI runs with
+    // IME still in its prior state; IME is promoted to enabled only at the
+    // end of *this* cycle. (Real hardware has an "EI delay" of one
+    // instruction, which is why "EI; HALT" enters HALT before any pending
+    // interrupt fires.)
+    bool promoteImeAtEnd = eiPending;
+    eiPending = false;
+
     int ie = mmu.readRegisterByte(MemoryRegisters.enabledInterrupts);
     int ifr = mmu.readRegisterByte(MemoryRegisters.triggeredInterrupts);
 
     if (halted) {
-      // Check for pending interrupts (enabled AND triggered)
-      // Only check the 5 valid interrupt bits (0x1F)
       int pendingInterrupts = ie & ifr & 0x1F;
-
       if (pendingInterrupts != 0) {
-        // Exit halt if any interrupt is pending (regardless of IME value)
+        // Exit halt if any interrupt is pending (regardless of IME value).
         halted = false;
       } else {
-        // No interrupts pending, stay halted
-        tick(4); // Consume 4 cycles while halted
+        // No interrupts pending, stay halted.
+        tick(4);
         return 4;
       }
     }
 
     if (interruptsEnabled && fireInterrupts()) {
-      // Testing with 20 to see the relationship
       tick(20);
       return 20;
     }
@@ -426,11 +440,18 @@ class CPU {
     if (!haltBugTriggered) {
       pc++;
     } else {
-      // Halt bug: skip PC increment this time, but clear flag
       haltBugTriggered = false;
     }
 
     int cyclesUsed = executeInstruction(op);
+
+    // End of the post-EI instruction: promote the deferred enable to IME.
+    // Done after instruction execution (not before) so an interrupt request
+    // raised by the instruction itself (e.g., a memory write triggering
+    // VBlank) still takes effect on the next cycle, not this one.
+    if (promoteImeAtEnd) {
+      interruptsEnabled = true;
+    }
 
     return cyclesUsed;
   }
@@ -882,11 +903,8 @@ class CPU {
         break;
     }
 
-    // Enable interrupts if needed after each instruction
-    if (enableInterruptsNextCycle) {
-      interruptsEnabled = true;
-      enableInterruptsNextCycle = false;
-    }
+    // Note: the EI delay (interruptsEnabled is promoted at end of the *next*
+    // instruction, not this one) is handled in [cycle], not here.
 
     // Advance the CPU clock by the cycles required for the executed instruction.
     tick(cyclesForOp);

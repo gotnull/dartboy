@@ -3,11 +3,13 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:dartboy/emulator/audio/apu.dart' show getQueuedAudioSize;
 import 'package:dartboy/emulator/configuration.dart';
 import 'package:dartboy/emulator/cpu/cpu.dart';
 import 'package:dartboy/emulator/gamepad_map.dart';
 import 'package:dartboy/emulator/memory/cartridge.dart';
 import 'package:dartboy/emulator/memory/gamepad.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:gamepads/gamepads.dart';
 
 /// Represents the state of the emulator.
@@ -188,7 +190,14 @@ class Emulator {
     Configuration.debugInstructions = wasDebug;
   }
 
-  /// Run the emulation at full speed with stable 60 FPS.
+  /// Run the emulation paced to native Game Boy speed.
+  ///
+  /// The Game Boy CPU runs at 4194304 Hz; one frame is exactly 70224 cycles,
+  /// which gives a frame rate of ~59.7275 Hz (≈16742 µs/frame). Pacing uses
+  /// the audio queue depth as the primary sync source when audio is enabled —
+  /// SDL drains samples at 44100 Hz, so keeping the queue at a steady level
+  /// keeps the emulator locked to real time. When audio is disabled, we fall
+  /// back to wall-clock pacing using the exact 16742 µs frame budget.
   void run() async {
     if (state != EmulatorState.ready) {
       print("Emulator not ready, cannot run.");
@@ -199,62 +208,91 @@ class Emulator {
 
     state = EmulatorState.running;
 
-    // FPS target and timing - be more aggressive on mobile
-    const int frameTimeMicros = 16667; // 1000000 / 60 microseconds per frame
+    // Native Game Boy frame timing: one frame = 70224 T-cycles, and at
+    // 4194304 Hz that lands at 16742 µs/frame (≈59.7275 Hz).
+    const int frameTimeMicros = 16742;
 
-    // Track performance
+    // Audio pacing target: keep around ~3 frames of samples queued. SDL drops
+    // additional samples at MAX_QUEUED_AUDIO (88200 bytes ≈ 0.5 s at 44.1 kHz
+    // stereo 16-bit), so this leaves plenty of slack while staying low-latency.
+    // 1 frame at 44.1 kHz stereo 16-bit ≈ 2952 bytes; aim for ~3× that.
+    const int audioTargetBytes = 9000;
+
     cycles = 0;
     int frameCounter = 0;
-    int totalCyclesExecuted = 0;
+    int totalCyclesThisSecond = 0;
 
-    // Use a stopwatch to measure actual FPS and timing
     Stopwatch perfStopwatch = Stopwatch()..start();
-    Stopwatch frameTimer = Stopwatch()..start();
-    int nextFrameTime = frameTimeMicros;
+    Stopwatch wallClock = Stopwatch()..start();
+    int nextFrameDeadlineMicros = frameTimeMicros;
 
     loop() async {
       while (state == EmulatorState.running) {
         try {
-          // Execute CPU steps for one frame
+          // Run cycles until the PPU signals end-of-frame (LY → 144). One
+          // iteration of this outer loop is exactly one Game Boy frame
+          // (= cyclesPerFrame T-cycles).
           while (!cpu!.ppu.frameReady) {
             int cyclesUsed = cpu!.cycle();
             cycles += cyclesUsed;
-            totalCyclesExecuted += cyclesUsed;
+            totalCyclesThisSecond += cyclesUsed;
           }
           cpu!.flushPendingUpdates();
-          
           cpu!.ppu.resetFrameReady();
 
-          // Calculate performance statistics
           frameCounter++;
           if (perfStopwatch.elapsedMilliseconds >= 1000) {
             double elapsedSeconds = perfStopwatch.elapsedMicroseconds / 1e6;
-            speed = (totalCyclesExecuted / elapsedSeconds).toInt();
+            speed = (totalCyclesThisSecond / elapsedSeconds).toInt();
             fps = (frameCounter / elapsedSeconds).round();
-
-
             perfStopwatch.reset();
             frameCounter = 0;
-            totalCyclesExecuted = 0;
+            totalCyclesThisSecond = 0;
           }
 
-          // Frame rate limiting - maintain stable 60 FPS but be flexible on mobile
-          int frameEndTime = frameTimer.elapsedMicroseconds;
-          int timeUntilNextFrame = nextFrameTime - frameEndTime;
-
-          if (timeUntilNextFrame > 1000 &&
-              timeUntilNextFrame < frameTimeMicros * 3) {
-            // Only delay if we have meaningful time left and aren't too far behind
-            // Use shorter delays on mobile for better responsiveness
-            await Future.delayed(Duration(microseconds: timeUntilNextFrame ~/ 2));
+          // Pace to real time. Prefer audio-driven sync when audio is
+          // initialized and reporting a queue size — SDL consumes samples at
+          // exactly 44100 Hz, so backing off when the queue is full
+          // automatically locks emulation to real time without drift.
+          int audioQueued = -1;
+          if (cpu!.apu.isInitialized && !kIsWeb) {
+            try {
+              audioQueued = getQueuedAudioSize();
+            } catch (_) {
+              audioQueued = -1;
+            }
           }
 
-          // Schedule next frame, accounting for any lag
-          nextFrameTime += frameTimeMicros;
-          int currentTime = frameTimer.elapsedMicroseconds;
-          if (nextFrameTime < currentTime - frameTimeMicros) {
-            // We're running significantly behind, reset timing
-            nextFrameTime = currentTime + frameTimeMicros;
+          if (audioQueued > audioTargetBytes) {
+            // Audio is well-buffered; sleep proportional to overshoot. Each
+            // byte represents 1/176400 s = ~5.67 µs of audio.
+            int overshootBytes = audioQueued - audioTargetBytes;
+            int sleepMicros = overshootBytes * 1000000 ~/ 176400;
+            // Cap the sleep so the GUI still responds and we don't oversleep
+            // past the next frame deadline by more than one frame.
+            if (sleepMicros > frameTimeMicros * 2) {
+              sleepMicros = frameTimeMicros * 2;
+            }
+            if (sleepMicros >= 1000) {
+              await Future.delayed(Duration(microseconds: sleepMicros));
+            }
+            // Resync the wall-clock deadline to "now" so audio-paced and
+            // wall-clock-paced runs don't drift apart from each other.
+            nextFrameDeadlineMicros =
+                wallClock.elapsedMicroseconds + frameTimeMicros;
+          } else {
+            // No audio (or audio queue underrunning) — pace by wall clock.
+            int now = wallClock.elapsedMicroseconds;
+            int sleepMicros = nextFrameDeadlineMicros - now;
+            if (sleepMicros >= 1000) {
+              await Future.delayed(Duration(microseconds: sleepMicros));
+            } else if (sleepMicros < -frameTimeMicros * 4) {
+              // Fell badly behind — drop the catch-up debt rather than
+              // running flat-out (which would just sustain the lag).
+              nextFrameDeadlineMicros = now + frameTimeMicros;
+              continue;
+            }
+            nextFrameDeadlineMicros += frameTimeMicros;
           }
         } catch (e, s) {
           Debugger().getLogs().forEach((log) => print(log));

@@ -524,8 +524,10 @@ class Instructions {
   }
 
   static void ei(CPU cpu) {
-    cpu.enableInterruptsNextCycle =
-        true; // Enable interrupts after the next instruction
+    // Defer enabling IME until the end of the *next* instruction. The
+    // canonical idiom `EI; HALT` relies on this delay so that HALT enters
+    // halt mode before any pending interrupt vectors.
+    cpu.eiPending = true;
   }
 
   static void di(CPU cpu) {

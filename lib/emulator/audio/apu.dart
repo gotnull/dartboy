@@ -716,34 +716,18 @@ class APU {
   static final Uint8List _audioBuffer = Uint8List(4);
   static final ByteData _audioByteData = _audioBuffer.buffer.asByteData();
   static Pointer<Uint8>? _audioBufferPtr;
-  static int _queueSizeCheckCounter = 0;
 
   void queueAudioSample(int leftSample, int rightSample) {
-    // Initialize buffer pointer once
     _audioBufferPtr ??= malloc.allocate<Uint8>(4);
 
-    // Check audio queue size occasionally to prevent excessive latency (every 100 samples)
-    if (++_queueSizeCheckCounter >= 100) {
-      _queueSizeCheckCounter = 0;
-      try {
-        int queueSize = getQueuedAudioSize();
-        if (queueSize > 65536) {
-          // If more than 64KB queued - much higher threshold
-          clearQueuedAudio(); // Clear queue to reduce latency
-        }
-      } catch (e) {
-        // If audio monitoring fails, continue without it
-      }
-    }
-
-    // Use pre-allocated buffer to avoid memory allocation overhead
     _audioByteData.setInt16(0, leftSample, Endian.little);
     _audioByteData.setInt16(2, rightSample, Endian.little);
 
-    // Copy to native memory buffer
     _audioBufferPtr!.asTypedList(4).setAll(0, _audioBuffer);
 
-    // Stream the audio
+    // Hand off to native SDL stream — the native layer drops samples on
+    // overflow. The emulator run loop paces itself against the queue depth,
+    // so we should rarely actually hit that ceiling.
     streamAudio(_audioBufferPtr!, 4);
   }
 

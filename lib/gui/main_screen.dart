@@ -11,6 +11,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:forui/forui.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({
@@ -41,6 +42,15 @@ class MainScreenState extends State<MainScreen> {
   List<RomInfo> availableRoms = [];
   bool isLoadingRoms = true;
   bool isRefreshingRoms = false;
+
+  static const Color _bg = Color(0xFF07090C);
+  static const Color _panel = Color(0xFF0D1117);
+  static const Color _panelAlt = Color(0xFF121820);
+  static const Color _border = Color(0xFF202834);
+  static const Color _muted = Color(0xFF7D8590);
+  static const Color _accent = Color(0xFF58A6FF);
+  static const Color _green = Color(0xFF3DDC84);
+  static const Color _amber = Color(0xFFFFB454);
 
   @override
   void initState() {
@@ -112,133 +122,76 @@ class MainScreenState extends State<MainScreen> {
   }
 
   void _showRomSelection() {
-    showModalBottomSheet(
+    showFSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.75,
-        decoration: const BoxDecoration(
-          color: Color(0xFF1C1C1E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      side: FLayout.btt,
+      mainAxisMaxRatio: 0.78,
+      builder: (context) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          20,
+          20,
+          MediaQuery.of(context).padding.bottom + 20,
         ),
         child: Column(
           children: [
-            // Handle
-            Container(
-              width: 36,
-              height: 5,
-              margin: const EdgeInsets.only(top: 12, bottom: 20),
-              decoration: BoxDecoration(
-                color: const Color(0xFF8E8E93).withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(3),
-              ),
+            Row(
+              children: [
+                Text(
+                  'Game Library',
+                  style: context.theme.typography.xl.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const Spacer(),
+                FBadge(child: Text('${availableRoms.length} games')),
+                const SizedBox(width: 8),
+                FButton.icon(
+                  onPress: isRefreshingRoms
+                      ? null
+                      : () async {
+                          setState(() => isRefreshingRoms = true);
+                          await RomManager.refreshRomList();
+                          await _loadAvailableRoms();
+                          if (mounted) {
+                            setState(() => isRefreshingRoms = false);
+                          }
+                        },
+                  child: isRefreshingRoms
+                      ? const FCircularProgress()
+                      : const Icon(FIcons.refreshCw),
+                ),
+              ],
             ),
-
-            // Header
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  Text(
-                    'Game Library',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF2C2C2E),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      '${availableRoms.length} games',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Refresh button
-                  GestureDetector(
-                    onTap: () async {
-                      setState(() => isRefreshingRoms = true);
-                      await RomManager.refreshRomList();
-                      await _loadAvailableRoms();
-                      if (mounted) {
-                        setState(() => isRefreshingRoms = false);
-                      }
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2C2C2E),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: isRefreshingRoms
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Color(0xFF007AFF),
-                              ),
-                            )
-                          : const Icon(
-                              Icons.refresh_rounded,
-                              color: Color(0xFF007AFF),
-                              size: 16,
-                            ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
             const SizedBox(height: 24),
-
-            // Game List
             Expanded(
               child: (isLoadingRoms && availableRoms.isEmpty)
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: Color(0xFF007AFF),
-                      ),
-                    )
+                  ? const Center(child: FCircularProgress())
                   : availableRoms.isEmpty
                       ? Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(
-                                Icons.videogame_asset_off_rounded,
-                                size: 64,
-                                color: const Color(0xFF8E8E93)
-                                    .withValues(alpha: 0.5),
-                              ),
+                              const Icon(FIcons.folderX, size: 44),
                               const SizedBox(height: 16),
                               Text(
                                 'No ROMs found',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.copyWith(
-                                      color: const Color(0xFF8E8E93),
-                                    ),
+                                style: context.theme.typography.lg,
                               ),
                               const SizedBox(height: 8),
                               Text(
                                 'Add ROM files to the assets/roms folder',
-                                style: Theme.of(context).textTheme.bodyMedium,
+                                style: context.theme.typography.sm,
                                 textAlign: TextAlign.center,
                               ),
                             ],
                           ),
                         )
                       : ListView.separated(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          padding: EdgeInsets.zero,
                           itemCount: availableRoms.length,
                           separatorBuilder: (context, index) =>
-                              const SizedBox(height: 12),
+                              const FDivider(),
                           itemBuilder: (context, index) {
                             final rom = availableRoms[index];
                             return _GameTile(
@@ -254,9 +207,6 @@ class MainScreenState extends State<MainScreen> {
                           },
                         ),
             ),
-
-            // Bottom padding
-            SizedBox(height: MediaQuery.of(context).padding.bottom + 20),
           ],
         ),
       ),
@@ -390,10 +340,13 @@ class MainScreenState extends State<MainScreen> {
       focusNode: FocusNode()..requestFocus(),
       autofocus: true,
       onKeyEvent: _handleKeyEvent,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF000000),
-        body: SafeArea(
-          child: _isMobile ? _buildMobileLayout() : _buildDesktopLayout(),
+      child: FScaffold(
+        childPad: false,
+        child: ColoredBox(
+          color: _bg,
+          child: SafeArea(
+            child: _isMobile ? _buildMobileLayout() : _buildDesktopLayout(),
+          ),
         ),
       ),
     );
@@ -433,7 +386,7 @@ class MainScreenState extends State<MainScreen> {
                 child: Row(
                   children: [
                     const Icon(
-                      Icons.videogame_asset_rounded,
+                      FIcons.gamepad2,
                       color: Color(0xFF007AFF),
                       size: 20,
                     ),
@@ -464,7 +417,8 @@ class MainScreenState extends State<MainScreen> {
               // Large Game Screen
               Expanded(
                 child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                   decoration: BoxDecoration(
                     color: const Color(0xFF000000),
                     borderRadius: BorderRadius.circular(20),
@@ -525,7 +479,7 @@ class MainScreenState extends State<MainScreen> {
             child: Row(
               children: [
                 const Icon(
-                  Icons.videogame_asset_rounded,
+                  FIcons.gamepad2,
                   color: Color(0xFF007AFF),
                   size: 24,
                 ),
@@ -573,8 +527,8 @@ class MainScreenState extends State<MainScreen> {
               children: [
                 _buildSimpleControlButton(
                   icon: MainScreen.emulator.state == EmulatorState.running
-                      ? Icons.pause_rounded
-                      : Icons.play_arrow_rounded,
+                      ? FIcons.pause
+                      : FIcons.play,
                   label: MainScreen.emulator.state == EmulatorState.running
                       ? 'Pause'
                       : 'Play',
@@ -586,7 +540,7 @@ class MainScreenState extends State<MainScreen> {
                       : const Color(0xFF34C759),
                 ),
                 _buildSimpleControlButton(
-                  icon: Icons.refresh_rounded,
+                  icon: FIcons.rotateCcw,
                   label: 'Reset',
                   onPressed: _resetEmulator,
                   color: const Color(0xFF8E8E93),
@@ -602,88 +556,540 @@ class MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildDesktopLayout() {
-    return Row(
+    return Column(
       children: [
-        // Left Panel - Game Screen
+        _buildDesktopToolbar(),
         Expanded(
-          flex: 3,
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              children: [
-                _buildHeader(),
-                const SizedBox(height: 32),
-                Expanded(child: _buildGameScreen()),
-                const SizedBox(height: 24),
-                _buildDesktopControlPanel(),
-              ],
-            ),
-          ),
-        ),
-
-        // Right Panel - Info
-        Container(
-          width: 320,
-          color: const Color(0xFF1C1C1E),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 32),
-                _buildPerformanceCard(),
-                const SizedBox(height: 24),
-                _buildSystemCard(),
-                const SizedBox(height: 24),
-                _buildDebugCard(),
-              ],
-            ),
+          child: Row(
+            children: [
+              _buildRomRail(),
+              const VerticalDivider(width: 1, thickness: 1, color: _border),
+              Expanded(child: _buildEmulatorWorkspace()),
+              const VerticalDivider(width: 1, thickness: 1, color: _border),
+              _buildInspectorRail(),
+            ],
           ),
         ),
       ],
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildDesktopToolbar() {
+    final running = MainScreen.emulator.state == EmulatorState.running;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: const BoxDecoration(
+        color: _panel,
+        border: Border(bottom: BorderSide(color: _border)),
+      ),
       child: Row(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: const Color(0xFF007AFF),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.videogame_asset_rounded,
-              color: Colors.white,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 16),
+          Container(width: 3, height: 24, color: _accent),
+          const SizedBox(width: 12),
+          const Icon(FIcons.gamepad2, size: 16, color: _accent),
+          const SizedBox(width: 8),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Text(
-                  'DartBoy',
-                  style: Theme.of(context).textTheme.titleLarge,
+                const Flexible(
+                  child: Text(
+                    'DartBoy',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Color(0xFFF0F6FC),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0,
+                    ),
+                  ),
                 ),
-                Text(
-                  _getStatusText(),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: _getStatusColor(),
-                      ),
-                ),
+                const SizedBox(width: 10),
+                _buildStatePill(),
               ],
             ),
           ),
-          _buildQuickActions(),
+          const SizedBox(width: 12),
+          Flexible(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildToolbarButton(
+                    icon: FIcons.folderOpen,
+                    label: 'Open ROM',
+                    onPressed: _loadFile,
+                  ),
+                  const SizedBox(width: 8),
+                  _buildToolbarButton(
+                    icon: FIcons.library,
+                    label: 'Library',
+                    onPressed: (isLoadingRoms || isRefreshingRoms)
+                        ? null
+                        : _showRomSelection,
+                  ),
+                  const SizedBox(width: 12),
+                  _buildToolbarButton(
+                    icon: running ? FIcons.pause : FIcons.play,
+                    label: running ? 'Pause' : 'Run',
+                    isPrimary: true,
+                    onPressed: running ? _pauseEmulator : _runOrStartEmulator,
+                  ),
+                  const SizedBox(width: 8),
+                  _buildToolbarButton(
+                    icon: FIcons.rotateCcw,
+                    label: 'Reset',
+                    onPressed: _resetEmulator,
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Widget _buildToolbarButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+    bool isPrimary = false,
+  }) {
+    final enabled = onPressed != null;
+    final color = isPrimary ? _green : const Color(0xFFD0D7DE);
+    final borderColor = isPrimary
+        ? _green.withValues(alpha: 0.45)
+        : _border.withValues(alpha: enabled ? 1 : 0.5);
+
+    return Opacity(
+      opacity: enabled ? 1 : 0.45,
+      child: GestureDetector(
+        onTap: onPressed,
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 11),
+          decoration: BoxDecoration(
+            color: isPrimary
+                ? _green.withValues(alpha: 0.10)
+                : const Color(0xFF0A0D12),
+            border: Border.all(color: borderColor),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 7),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatePill() {
+    return Container(
+      height: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: _getStatusColor().withValues(alpha: 0.08),
+        border: Border.all(color: _getStatusColor().withValues(alpha: 0.45)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Center(
+        child: Text(
+          MainScreen.emulator.state.name.toUpperCase(),
+          style: TextStyle(
+            color: _getStatusColor(),
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRomRail() {
+    final roms = availableRoms.take(10).toList();
+
+    return Container(
+      width: 248,
+      color: _panel,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildRailHeader(
+            title: 'Library',
+            trailing: isRefreshingRoms
+                ? const FCircularProgress()
+                : _IconChromeButton(
+                    icon: FIcons.refreshCw,
+                    onPressed: () async {
+                      setState(() => isRefreshingRoms = true);
+                      await RomManager.refreshRomList();
+                      await _loadAvailableRoms();
+                      if (mounted) {
+                        setState(() => isRefreshingRoms = false);
+                      }
+                    },
+                  ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Text(
+              '${availableRoms.length} available ROMs',
+              style: const TextStyle(color: _muted, fontSize: 12),
+            ),
+          ),
+          Expanded(
+            child: isLoadingRoms
+                ? const Center(child: FCircularProgress())
+                : roms.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Text(
+                            'No ROMs found',
+                            style: TextStyle(color: _muted),
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                        itemCount: roms.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 4),
+                        itemBuilder: (context, index) {
+                          final rom = roms[index];
+                          final selected =
+                              rom.name == MainScreen.currentRomName;
+                          return _LibraryRow(
+                            rom: rom,
+                            selected: selected,
+                            onTap: () => _debugFile(rom.path, rom.name),
+                          );
+                        },
+                      ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: SizedBox(
+              width: double.infinity,
+              child: _TextChromeButton(
+                onPress: (isLoadingRoms || isRefreshingRoms)
+                    ? null
+                    : _showRomSelection,
+                icon: FIcons.library,
+                label: 'Browse all',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRailHeader({required String title, Widget? trailing}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 14, 8, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              overflow: TextOverflow.ellipsis,
+              style: context.theme.typography.sm.copyWith(
+                color: _muted,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+          if (trailing != null) trailing,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmulatorWorkspace() {
+    return Column(
+      children: [
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            color: _bg,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildGameTitleBar(),
+                const SizedBox(height: 14),
+                Expanded(child: _buildViewport()),
+              ],
+            ),
+          ),
+        ),
+        _buildDesktopStatusBar(),
+      ],
+    );
+  }
+
+  Widget _buildGameTitleBar() {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            MainScreen.currentRomName ?? 'No cartridge loaded',
+            overflow: TextOverflow.ellipsis,
+            style: context.theme.typography.lg.copyWith(
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0,
+            ),
+          ),
+        ),
+        Text(
+          '${MainScreen.emulator.fps.toStringAsFixed(1)} FPS',
+          style: const TextStyle(
+            color: _accent,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildViewport() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        final maxHeight = constraints.maxHeight;
+        var width = maxWidth;
+        var height = width * 144 / 160;
+
+        if (height > maxHeight) {
+          height = maxHeight;
+          width = height * 160 / 144;
+        }
+
+        return Center(
+          child: Container(
+            width: width,
+            height: height,
+            decoration: BoxDecoration(
+              color: Colors.black,
+              border: Border.all(color: _border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  blurRadius: 28,
+                  offset: const Offset(0, 18),
+                ),
+                BoxShadow(
+                  color: _accent.withValues(alpha: 0.04),
+                  blurRadius: 60,
+                ),
+              ],
+            ),
+            child: const ClipRect(
+              child: LCDWidget(key: Key("lcd")),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDesktopStatusBar() {
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: const BoxDecoration(
+        color: _panel,
+        border: Border(top: BorderSide(color: _border)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildStatusSegment('State', MainScreen.emulator.state.name),
+                  _buildStatusSegment('CPU', '${MainScreen.emulator.speed} Hz'),
+                  _buildStatusSegment(
+                      'Cycles', _formatNumber(MainScreen.emulator.cycles)),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              _getStatusText(),
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: _muted, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusSegment(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 14),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$label ',
+            style: const TextStyle(color: _muted, fontSize: 11),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Color(0xFFE6EDF3),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInspectorRail() {
+    return Container(
+      width: 300,
+      color: _panel,
+      child: ListView(
+        padding: const EdgeInsets.all(10),
+        children: [
+          _buildInspectorSection(
+            title: 'Emulation',
+            children: [
+              _buildMetricRow('Frame rate',
+                  '${MainScreen.emulator.fps.toStringAsFixed(1)} FPS'),
+              _buildMetricRow('CPU speed', '${MainScreen.emulator.speed} Hz'),
+              _buildMetricRow(
+                  'Cycles', _formatNumber(MainScreen.emulator.cycles)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildInspectorSection(
+            title: 'System',
+            action: _buildToggleButton(
+              'Scanlines',
+              MainScreen.scanlineEnabled,
+              _toggleScanlines,
+            ),
+            children: [
+              _buildMetricRow('ROM', MainScreen.currentRomName ?? 'None'),
+              _buildMetricRow(
+                  'State', MainScreen.emulator.state.name.toUpperCase()),
+              _buildMetricRow('Platform', _getPlatformName()),
+              _buildMetricRow('Version', '1.0.0'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildInspectorSection(
+            title: 'Input Map',
+            children: [
+              _buildMetricRow('D-pad', 'Arrow keys'),
+              _buildMetricRow('A / B', 'Z / X'),
+              _buildMetricRow('Start', 'Enter'),
+              _buildMetricRow('Select', 'Backspace'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildInspectorSection(
+            title: 'Debug',
+            action: _buildToggleButton(
+              MainScreen.debugEnabled ? 'Hide' : 'Show',
+              MainScreen.debugEnabled,
+              _toggleDebug,
+            ),
+            children: MainScreen.debugEnabled ? _buildDebugRows() : const [],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInspectorSection({
+    required String title,
+    required List<Widget> children,
+    Widget? action,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A0D12),
+        border: Border.all(color: _border),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.theme.typography.sm.copyWith(
+                    color: const Color(0xFFE6EDF3),
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ),
+              if (action != null) action,
+            ],
+          ),
+          if (children.isNotEmpty) ...[
+            const SizedBox(height: 9),
+            ...children,
+          ],
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildDebugRows() {
+    final cpu = MainScreen.emulator.cpu;
+    if (cpu == null) {
+      return [_buildMetricRow('Status', 'CPU not loaded')];
+    }
+
+    return [
+      _buildMetricRow(
+          'PC', '0x${cpu.pc.toRadixString(16).toUpperCase().padLeft(4, '0')}'),
+      _buildMetricRow(
+          'SP', '0x${cpu.sp.toRadixString(16).toUpperCase().padLeft(4, '0')}'),
+      _buildMetricRow('AF',
+          '0x${cpu.registers.getRegisterPair(3).toRadixString(16).toUpperCase().padLeft(4, '0')}'),
+      _buildMetricRow('BC',
+          '0x${cpu.registers.getRegisterPair(0).toRadixString(16).toUpperCase().padLeft(4, '0')}'),
+      _buildMetricRow('DE',
+          '0x${cpu.registers.getRegisterPair(1).toRadixString(16).toUpperCase().padLeft(4, '0')}'),
+      _buildMetricRow('HL',
+          '0x${cpu.registers.getRegisterPair(2).toRadixString(16).toUpperCase().padLeft(4, '0')}'),
+      _buildMetricRow('IME', cpu.interruptsEnabled ? 'Enabled' : 'Disabled'),
+      _buildMetricRow('Halt', cpu.halted ? 'Yes' : 'No'),
+    ];
   }
 
   Widget _buildQuickActions() {
@@ -691,12 +1097,12 @@ class MainScreenState extends State<MainScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         _IOSButton(
-          icon: Icons.folder_rounded,
+          icon: FIcons.folderOpen,
           onPressed: _loadFile,
         ),
         const SizedBox(width: 8),
         _IOSButton(
-          icon: Icons.library_books_rounded,
+          icon: FIcons.library,
           onPressed:
               (isLoadingRoms || isRefreshingRoms) ? null : _showRomSelection,
           isLoading: isLoadingRoms || isRefreshingRoms,
@@ -885,230 +1291,30 @@ class MainScreenState extends State<MainScreen> {
     );
   }
 
-
-  Widget _buildDesktopControlPanel() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1C1C1E),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _buildControlButton(
-            icon: MainScreen.emulator.state == EmulatorState.running
-                ? Icons.pause_rounded
-                : Icons.play_arrow_rounded,
-            label: MainScreen.emulator.state == EmulatorState.running
-                ? 'Pause'
-                : 'Run',
-            onPressed: MainScreen.emulator.state == EmulatorState.running
-                ? _pauseEmulator
-                : _runOrStartEmulator,
-            color: MainScreen.emulator.state == EmulatorState.running
-                ? const Color(0xFFFF9500)
-                : const Color(0xFF34C759),
-          ),
-          _buildControlButton(
-            icon: Icons.refresh_rounded,
-            label: 'Reset',
-            onPressed: _resetEmulator,
-            color: const Color(0xFF8E8E93),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildControlButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onPressed,
-    required Color color,
-  }) {
-    return GestureDetector(
-      onTap: onPressed,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(
-              icon,
-              color: color,
-              size: 24,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-
-
-  Widget _buildPerformanceCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2C2C2E),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Performance',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 16),
-          _buildMetricRow('Frame Rate',
-              '${MainScreen.emulator.fps.toStringAsFixed(1)} FPS'),
-          _buildMetricRow('CPU Speed', '${MainScreen.emulator.speed} Hz'),
-          _buildMetricRow('Cycles', _formatNumber(MainScreen.emulator.cycles)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSystemCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2C2C2E),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'System',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              _buildToggleButton(
-                'Scanlines',
-                MainScreen.scanlineEnabled,
-                _toggleScanlines,
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildMetricRow(
-              'State', MainScreen.emulator.state.name.toUpperCase()),
-          _buildMetricRow('Platform', _getPlatformName()),
-          _buildMetricRow('Version', '1.0.0'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDebugCard() {
-    if (!MainScreen.debugEnabled) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: const Color(0xFF2C2C2E),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Debug Info',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            _buildToggleButton(
-              'Show',
-              MainScreen.debugEnabled,
-              _toggleDebug,
-            ),
-          ],
-        ),
-      );
-    }
-
-    final cpu = MainScreen.emulator.cpu;
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2C2C2E),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Debug Info',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              _buildToggleButton(
-                'Hide',
-                MainScreen.debugEnabled,
-                _toggleDebug,
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (cpu != null) ...[
-            _buildMetricRow('PC',
-                '0x${cpu.pc.toRadixString(16).toUpperCase().padLeft(4, '0')}'),
-            _buildMetricRow('SP',
-                '0x${cpu.sp.toRadixString(16).toUpperCase().padLeft(4, '0')}'),
-            _buildMetricRow('AF',
-                '0x${cpu.registers.getRegisterPair(3).toRadixString(16).toUpperCase().padLeft(4, '0')}'),
-            _buildMetricRow('BC',
-                '0x${cpu.registers.getRegisterPair(0).toRadixString(16).toUpperCase().padLeft(4, '0')}'),
-            _buildMetricRow('DE',
-                '0x${cpu.registers.getRegisterPair(1).toRadixString(16).toUpperCase().padLeft(4, '0')}'),
-            _buildMetricRow('HL',
-                '0x${cpu.registers.getRegisterPair(2).toRadixString(16).toUpperCase().padLeft(4, '0')}'),
-            _buildMetricRow(
-                'IME', cpu.interruptsEnabled ? 'Enabled' : 'Disabled'),
-            _buildMetricRow('Halt', cpu.halted ? 'Yes' : 'No'),
-          ] else ...[
-            _buildMetricRow('Status', 'CPU Not Loaded'),
-          ],
-        ],
-      ),
-    );
-  }
-
-
   Widget _buildToggleButton(String label, bool isEnabled, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        height: 26,
+        padding: const EdgeInsets.symmetric(horizontal: 9),
         decoration: BoxDecoration(
-          color: isEnabled ? const Color(0xFF007AFF) : const Color(0xFF3A3A3C),
-          borderRadius: BorderRadius.circular(12),
+          color: isEnabled
+              ? _accent.withValues(alpha: 0.12)
+              : const Color(0xFF161B22),
+          border: Border.all(
+            color: isEnabled ? _accent.withValues(alpha: 0.55) : _border,
+          ),
+          borderRadius: BorderRadius.circular(4),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isEnabled ? Colors.white : const Color(0xFF8E8E93),
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isEnabled ? _accent : _muted,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0,
+            ),
           ),
         ),
       ),
@@ -1121,16 +1327,27 @@ class MainScreenState extends State<MainScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodyMedium,
+          Expanded(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFFD0D7DE),
+                fontSize: 13,
+              ),
+            ),
           ),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Color(0xFF007AFF),
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              value,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: const TextStyle(
+                color: _accent,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -1380,8 +1597,8 @@ class MainScreenState extends State<MainScreen> {
       children: [
         _buildLargeControlButton(
           icon: MainScreen.emulator.state == EmulatorState.running
-              ? Icons.pause_rounded
-              : Icons.play_arrow_rounded,
+              ? FIcons.pause
+              : FIcons.play,
           label: MainScreen.emulator.state == EmulatorState.running
               ? 'PAUSE'
               : 'PLAY',
@@ -1394,7 +1611,7 @@ class MainScreenState extends State<MainScreen> {
         ),
         const SizedBox(height: 12),
         _buildLargeControlButton(
-          icon: Icons.refresh_rounded,
+          icon: FIcons.rotateCcw,
           label: 'RESET',
           onPressed: _resetEmulator,
           color: const Color(0xFF8E8E93),
@@ -1517,29 +1734,166 @@ class _IOSButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onPressed,
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: const Color(0xFF2C2C2E),
-          borderRadius: BorderRadius.circular(8),
+    return FButton.icon(
+      onPress: onPressed,
+      child: isLoading ? const FCircularProgress() : Icon(icon),
+    );
+  }
+}
+
+class _IconChromeButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  const _IconChromeButton({
+    required this.icon,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+
+    return Opacity(
+      opacity: enabled ? 1 : 0.45,
+      child: GestureDetector(
+        onTap: onPressed,
+        child: Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: const Color(0xFF0A0D12),
+            border: Border.all(color: MainScreenState._border),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Icon(
+            icon,
+            size: 14,
+            color: MainScreenState._muted,
+          ),
         ),
-        child: isLoading
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Color(0xFF007AFF),
+      ),
+    );
+  }
+}
+
+class _TextChromeButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPress;
+
+  const _TextChromeButton({
+    required this.icon,
+    required this.label,
+    required this.onPress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPress != null;
+
+    return Opacity(
+      opacity: enabled ? 1 : 0.45,
+      child: GestureDetector(
+        onTap: onPress,
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0A0D12),
+            border: Border.all(color: MainScreenState._border),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 15, color: const Color(0xFFD0D7DE)),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFFD0D7DE),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                 ),
-              )
-            : Icon(
-                icon,
-                color: const Color(0xFF007AFF),
-                size: 16,
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LibraryRow extends StatelessWidget {
+  final RomInfo rom;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _LibraryRow({
+    required this.rom,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = rom.isTestRom
+        ? MainScreenState._amber
+        : (rom.platform.contains('Color')
+            ? MainScreenState._accent
+            : MainScreenState._muted);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? MainScreenState._panelAlt : const Color(0xFF0A0D12),
+          border: Border.all(
+            color: selected ? MainScreenState._accent : MainScreenState._border,
+          ),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 3,
+              height: 26,
+              color: color,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    rom.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFFE6EDF3),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    rom.platform,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: MainScreenState._muted,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1584,9 +1938,7 @@ class _GameTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
-                isTestRom
-                    ? Icons.bug_report_rounded
-                    : Icons.videogame_asset_rounded,
+                isTestRom ? FIcons.bug : FIcons.gamepad2,
                 color: Colors.white,
                 size: 20,
               ),
@@ -1615,7 +1967,7 @@ class _GameTile extends StatelessWidget {
               ),
             ),
             const Icon(
-              Icons.chevron_right_rounded,
+              FIcons.chevronRight,
               color: Color(0xFF8E8E93),
               size: 20,
             ),
