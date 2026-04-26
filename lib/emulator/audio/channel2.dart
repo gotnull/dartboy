@@ -63,8 +63,10 @@ class Channel2 {
   int readNR23() => 0xFF; // Write-only register
   void writeNR23(int value) {
     nr23 = value;
+    // Only the period changes; the running countdown keeps draining and
+    // reloads with the new period when it next expires. Resetting the
+    // countdown on every register write makes pitch slides choppy.
     frequency = (nr24 & 0x07) << 8 | nr23;
-    updateFrequencyTimer();
   }
 
   // NR24: Frequency High and Control
@@ -75,8 +77,8 @@ class Channel2 {
     bool triggering = (value & 0x80) != 0;
     nr24 = value;
 
+    // Period only — see writeNR23.
     frequency = (nr24 & 0x07) << 8 | nr23;
-    updateFrequencyTimer();
 
     bool nextStepDoesntClockLength = (frameSequencer & 1) == 0;
     if (nextStepDoesntClockLength &&
@@ -122,20 +124,51 @@ class Channel2 {
     if (frequencyTimer <= 0) frequencyTimer = 4;
   }
 
-  // Frequency timer - 0-based duty step, counts down
+  /// See Channel1 for the rationale — this is the time-weighted output
+  /// accumulator that lets us emit a band-limited average per audio sample
+  /// instead of a single instantaneous snapshot.
+  double _outAcc = 0.0;
+  int _cycAcc = 0;
+
   void tick(int cycles) {
-    if (!enabled) return;
-
-    frequencyTimer -= cycles;
-    while (frequencyTimer <= 0) {
-      // Advance duty step (0-7, wrapping)
-      dutyStep = (dutyStep + 1) & 7;
-
-      // Use proper Game Boy frequency formula
-      int period = 4 * (2048 - frequency);
-      if (period <= 0) period = 4;
-      frequencyTimer += period;
+    if (!enabled) {
+      _cycAcc += cycles;
+      return;
     }
+
+    while (cycles > 0) {
+      final int dutyBit = dutyPatterns[dutyCycle][dutyStep];
+      final int instOut = dutyBit == 1 ? volume : 0;
+
+      int segment = frequencyTimer;
+      if (segment <= 0) segment = 1;
+      if (segment > cycles) segment = cycles;
+
+      _outAcc += instOut * segment;
+      _cycAcc += segment;
+
+      cycles -= segment;
+      frequencyTimer -= segment;
+
+      if (frequencyTimer <= 0) {
+        dutyStep = (dutyStep + 1) & 7;
+        int period = 4 * (2048 - frequency);
+        if (period <= 0) period = 4;
+        frequencyTimer += period;
+      }
+    }
+  }
+
+  double getAveragedOutput() {
+    if (!enabled || !dacEnabled || _cycAcc <= 0) {
+      _outAcc = 0;
+      _cycAcc = 0;
+      return 0.0;
+    }
+    final double avg = _outAcc / _cycAcc;
+    _outAcc = 0;
+    _cycAcc = 0;
+    return avg;
   }
 
   // Update length counter (called by frame sequencer)

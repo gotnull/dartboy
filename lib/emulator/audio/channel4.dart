@@ -145,17 +145,51 @@ class Channel4 {
     if (frequencyTimer <= 0) frequencyTimer = 8; // Ensure minimum period
   }
 
-  // Channel 4 frequency timer
-  void tick(int cycles) {
-    if (!enabled) return;
+  /// Time-weighted-output accumulator (see Channel1).
+  double _outAcc = 0.0;
+  int _cycAcc = 0;
 
-    frequencyTimer -= cycles;
-    while (frequencyTimer <= 0) {
-      int period = getFrequencyTimerPeriod();
-      if (period <= 0) period = 8;
-      frequencyTimer += period;
-      clockLFSR();
+  // Channel 4 frequency timer; segments output at every LFSR clock edge so
+  // the audio sample is the time-weighted average of the noise level over
+  // the sample period.
+  void tick(int cycles) {
+    if (!enabled) {
+      _cycAcc += cycles;
+      return;
     }
+
+    while (cycles > 0) {
+      final int instOut = ((~lfsr) & 1) * volume;
+
+      int segment = frequencyTimer;
+      if (segment <= 0) segment = 1;
+      if (segment > cycles) segment = cycles;
+
+      _outAcc += instOut * segment;
+      _cycAcc += segment;
+
+      cycles -= segment;
+      frequencyTimer -= segment;
+
+      if (frequencyTimer <= 0) {
+        int period = getFrequencyTimerPeriod();
+        if (period <= 0) period = 8;
+        frequencyTimer += period;
+        clockLFSR();
+      }
+    }
+  }
+
+  double getAveragedOutput() {
+    if (!enabled || !dacEnabled || _cycAcc <= 0) {
+      _outAcc = 0;
+      _cycAcc = 0;
+      return 0.0;
+    }
+    final double avg = _outAcc / _cycAcc;
+    _outAcc = 0;
+    _cycAcc = 0;
+    return avg;
   }
 
   // Clock the LFSR (Linear Feedback Shift Register)

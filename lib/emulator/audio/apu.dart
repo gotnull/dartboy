@@ -188,7 +188,7 @@ class APU {
   // to read the correct DIV-APU bit (bit 4 normal speed, bit 5 double speed).
   bool _doubleSpeed = false;
 
-  // SameBoy quirk: when turning the APU on while the DIV-APU bit is high,
+  // Quirk: when turning the APU on while the DIV-APU bit is high,
   // the first DIV/APU event after power-on is skipped.
   bool _skipNextDivApu = false;
 
@@ -355,7 +355,7 @@ class APU {
           frameSequencer = 7; // next step is 0
           _syncFrameSequencerStateToChannels();
 
-          // SameBoy quirk: if the DIV-APU bit is currently high at the moment
+          // Quirk: if the DIV-APU bit is currently high at the moment
           // of power-on, the first DIV/APU falling edge is skipped. This shifts
           // the time-to-first-clock by one full DIV/APU period (≈ 8192 cycles)
           // depending on the DIV alignment. Required by test 07 sub-test 5.
@@ -491,8 +491,9 @@ class APU {
     lastDivAPU = divRegister;
 
     if (fell) {
-      // SameBoy quirk: when the APU is powered on while the DIV-APU bit was
-      // already high, the first falling edge after power-on is skipped.
+      // APU power-on quirk: when the APU is powered on while the DIV-APU
+      // bit was already high, the first falling edge after power-on is
+      // skipped (the divider needs one full period before it's reliable).
       if (_skipNextDivApu) {
         _skipNextDivApu = false;
       } else {
@@ -683,11 +684,14 @@ class APU {
   }
 
   List<int> mixAudioChannels() {
-    // Get raw digital channel outputs (0-15 range)
-    int ch1Digital = channel1.getOutput(); // 0-15
-    int ch2Digital = channel2.getOutput(); // 0-15
-    int ch3Digital = channel3.getOutput(); // 0-15
-    int ch4Digital = channel4.getOutput(); // 0-15
+    // Pull each channel's *time-weighted average* output over the cycles
+    // that elapsed since the last sample. Returning a fractional value here
+    // (instead of a single instantaneous snapshot) is what eliminates the
+    // characteristic "crunchy" aliasing on high-pitched square notes.
+    final double ch1Digital = channel1.getAveragedOutput();
+    final double ch2Digital = channel2.getAveragedOutput();
+    final double ch3Digital = channel3.getAveragedOutput();
+    final double ch4Digital = channel4.getAveragedOutput();
 
     // Optional debug output (disabled for production)
     // _debugSampleCounter++;

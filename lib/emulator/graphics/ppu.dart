@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:dartboy/emulator/configuration.dart';
 import 'package:dartboy/emulator/cpu/cpu.dart';
 import 'package:dartboy/emulator/graphics/palette.dart';
@@ -178,22 +180,84 @@ class PPU {
   /// @param to Reference to an array of Palettes to update.
   /// @param i The palette index being updated.
   /// @param j The int index of the palette being updated.
+  /// Game Boy Color (CGB) channel response LUT.
+  ///
+  /// The real CGB LCD doesn't respond linearly to the 5-bit-per-channel
+  /// values written into palette RAM — its response curve clusters the
+  /// dark end and stretches the bright end, which is what gives CGB games
+  /// their characteristic look (and what makes neighbouring shades visibly
+  /// distinct rather than blending into each other). This is the same
+  /// 32-entry LUT used by "Modern - Balanced" color correction.
+  static const List<int> _cgbCurve = [
+    0,
+    6,
+    12,
+    20,
+    28,
+    36,
+    45,
+    56,
+    66,
+    76,
+    88,
+    100,
+    113,
+    125,
+    137,
+    149,
+    161,
+    172,
+    182,
+    192,
+    202,
+    210,
+    218,
+    225,
+    232,
+    238,
+    243,
+    247,
+    250,
+    252,
+    254,
+    255,
+  ];
+
+  /// Performs an update to a int of palette RAM, the colors are stored in
+  /// two bytes as: bit 0-4 R, 5-9 G, 10-14 B (each 0-1F).
   void updatePalette(List<int> from, Palette to, int i, int j) {
-    // Read an RGB value from RAM
     int data =
         ((from[i * 8 + j * 2 + 1] & 0xff) << 8) | (from[i * 8 + j * 2] & 0xff);
 
-    // Extract components
-    int red = (data & 0x1f);
+    int red = data & 0x1f;
     int green = (data >> 5) & 0x1f;
     int blue = (data >> 10) & 0x1f;
 
-    int r = ((red / 31.0 * 255 + 0.5).toInt() & 0xFF) << 16;
-    int g = ((green / 31.0 * 255 + 0.5).toInt() & 0xFF) << 8;
-    int b = (blue / 31.0 * 255 + 0.5).toInt() & 0xFF;
+    // Pass each 5-bit channel through the CGB response curve, then apply
+    // a small channel-mixing pass that simulates the LCD's red→green and
+    // blue→green crosstalk. Without this mix, distinct palette entries that
+    // differ only in the green channel can collapse to indistinguishable
+    // outputs — producing flat-looking gradients (cf. the Zelda intro
+    // water scene where it showss fine horizontal banding and a
+    // linear-mapped emulator shows a single solid colour).
+    int r = _cgbCurve[red];
+    int g = _cgbCurve[green];
+    int b = _cgbCurve[blue];
 
-    // Convert from [0, 1Fh] to [0, FFh], and recombine
-    to.colors[j] = (r | g | b);
+    // Gamma-correct cross-channel mix
+    // Red/blue are unchanged; green is biased toward blue. Without this,
+    // distinct palette entries that differ only in green tend to collapse
+    // to indistinguishable outputs after curve-mapping.
+    if (g != b) {
+      const double gamma = 2.2;
+      final double gNorm = g / 255.0;
+      final double bNorm = b / 255.0;
+      final double mixed =
+          (math.pow(gNorm, gamma) * 3 + math.pow(bNorm, gamma)) / 4;
+      g = (math.pow(mixed.clamp(0.0, 1.0), 1.0 / gamma) * 255).round();
+    }
+
+    to.colors[j] = (r << 16) | (g << 8) | b;
   }
 
   /// Updates an entry of background palette RAM. Internal function for use in a Memory controller.
@@ -458,10 +522,10 @@ class PPU {
         bgHasPriority = (attributes & 0x80) != 0;
       }
 
-      // Calculate tile position  
+      // Calculate tile position
       int tileX = -(scrollX % 8) + x * 8;
       int tileY = -(scrollY % 8) + y * 8;
-      
+
       // Skip tiles that don't intersect with the current scanline
       if (scanline >= tileY && scanline < tileY + 8) {
         // Delegate tile drawing
@@ -527,8 +591,20 @@ class PPU {
         bgHasPriority = (attributes & 0x80) != 0;
       }
 
-      drawTile(bgPalettes[gbcPalette], data, posX + x * 8, posY + y * 8, tile,
-          tileDataOffset, scanline, flipX, flipY, gbcVramBank, 0, false, bgHasPriority);
+      drawTile(
+          bgPalettes[gbcPalette],
+          data,
+          posX + x * 8,
+          posY + y * 8,
+          tile,
+          tileDataOffset,
+          scanline,
+          flipX,
+          flipY,
+          gbcVramBank,
+          0,
+          false,
+          bgHasPriority);
     }
   }
 
@@ -619,15 +695,17 @@ class PPU {
             bgPixelHasPriority = false;
           } else {
             // LCDC bit 0 (BG/Window display) is used for priority in CGB mode.
-            bool lcdcBit0Enabled = (cpu.mmu.readRegisterByte(MemoryRegisters.lcdc) &
-                    MemoryRegisters.lcdcBgWindowDisplayBit) !=
-                0;
+            bool lcdcBit0Enabled =
+                (cpu.mmu.readRegisterByte(MemoryRegisters.lcdc) &
+                        MemoryRegisters.lcdcBgWindowDisplayBit) !=
+                    0;
             if (!lcdcBit0Enabled) {
               // Rule 2: If LCDC bit 0 is off, OBJ has priority.
               bgPixelHasPriority = false;
             } else {
               bool oamPriorityBit = basePriority == PPU.p2; // OAM bit 7
-              bool bgAttributePriorityBit = bgPriorityBuffer[index]; // BG attribute bit 7
+              bool bgAttributePriorityBit =
+                  bgPriorityBuffer[index]; // BG attribute bit 7
 
               // When LCDC bit 0 is on (1):
               // - If OAM bit 7 = 0 AND BG bit 7 = 0, OBJ has priority
@@ -664,7 +742,9 @@ class PPU {
       }
 
       // For background tiles, check if we can overwrite existing pixels
-      if (!sprite && basePriority != 0 && basePriority < (data[index] & 0xFF000000)) {
+      if (!sprite &&
+          basePriority != 0 &&
+          basePriority < (data[index] & 0xFF000000)) {
         continue;
       }
 
@@ -704,7 +784,7 @@ class PPU {
       // Specifies the sprites horizontal position on the screen (minus 8).
       // An offscreen value (X=0 or X>=168) hides the sprite, but the sprite still affects the priority ordering.
       int x = cpu.mmu.readOAM(i + 1) & 0xff;
-      
+
       // Early exit if sprite is completely off-screen horizontally
       if (x == 0 || x >= 168) {
         continue;

@@ -95,8 +95,12 @@ class Channel1 {
   int readNR13() => 0xFF; // Write-only register
   void writeNR13(int value) {
     nr13 = value;
+    // Only update the *period*, not the running countdown. Real hardware
+    // keeps the current frequency timer counting down and reloads it with
+    // the new period the next time it expires; resetting the countdown on
+    // every NR13/NR14 write would make vibrato and pitch slides sound
+    // choppy because every register write would restart the duty cycle.
     frequency = (nr14 & 0x07) << 8 | nr13;
-    updateFrequencyTimer();
   }
 
   // NR14: Frequency High and Control
@@ -107,8 +111,10 @@ class Channel1 {
     bool triggering = (value & 0x80) != 0;
     nr14 = value;
 
+    // See note in writeNR13: only the period changes; the timer reload
+    // happens naturally when the current countdown reaches zero. Triggering
+    // (handled below) is what restarts the timer from scratch.
     frequency = (nr14 & 0x07) << 8 | nr13;
-    updateFrequencyTimer();
 
     // Pan Docs extra-length-clock quirk: writing NRx4 with length transitioning
     // from disabled→enabled, on a frame-sequencer step whose next step does
@@ -179,20 +185,61 @@ class Channel1 {
     if (frequencyTimer <= 0) frequencyTimer = 4;
   }
 
-  // Frequency timer - 0-based duty step, counts down
+  /// Running accumulator: sum of (instantaneous-output × cycles-in-that-state)
+  /// since the last call to [getAveragedOutput]. Used to band-limit the
+  /// channel by emitting the time-weighted average rather than a snapshot,
+  /// which is what produces the "crunchy" aliasing on high-pitched notes.
+  double _outAcc = 0.0;
+  int _cycAcc = 0;
+
+  // Frequency timer - 0-based duty step, counts down. Splits each tick into
+  // sub-segments at every duty-step transition and accumulates the
+  // time-weighted output over each segment.
   void tick(int cycles) {
-    if (!enabled) return;
-
-    frequencyTimer -= cycles;
-    while (frequencyTimer <= 0) {
-      // Advance duty step (0-7, wrapping)
-      dutyStep = (dutyStep + 1) & 7;
-
-      // Use proper Game Boy frequency formula
-      int period = 4 * (2048 - frequency);
-      if (period <= 0) period = 4;
-      frequencyTimer += period;
+    if (!enabled) {
+      _cycAcc += cycles;
+      return;
     }
+
+    while (cycles > 0) {
+      final int dutyBit = dutyPatterns[dutyCycle][dutyStep];
+      final int instOut = dutyBit == 1 ? volume : 0;
+
+      // The current duty step lasts until [frequencyTimer] runs out;
+      // anything past that gets a fresh duty bit and a fresh period.
+      int segment = frequencyTimer;
+      if (segment <= 0) segment = 1;
+      if (segment > cycles) segment = cycles;
+
+      _outAcc += instOut * segment;
+      _cycAcc += segment;
+
+      cycles -= segment;
+      frequencyTimer -= segment;
+
+      if (frequencyTimer <= 0) {
+        dutyStep = (dutyStep + 1) & 7;
+        int period = 4 * (2048 - frequency);
+        if (period <= 0) period = 4;
+        frequencyTimer += period;
+      }
+    }
+  }
+
+  /// Time-weighted average output (0.0..15.0) over the cycles ticked since
+  /// the last call. Returning a fractional value preserves the signal's
+  /// energy at frequencies above Nyquist instead of folding them back as
+  /// audible aliasing.
+  double getAveragedOutput() {
+    if (!enabled || !dacEnabled || _cycAcc <= 0) {
+      _outAcc = 0;
+      _cycAcc = 0;
+      return 0.0;
+    }
+    final double avg = _outAcc / _cycAcc;
+    _outAcc = 0;
+    _cycAcc = 0;
+    return avg;
   }
 
   // Update length counter (called by frame sequencer)

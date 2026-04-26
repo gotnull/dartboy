@@ -229,16 +229,24 @@ class Emulator {
     loop() async {
       while (state == EmulatorState.running) {
         try {
+          // The CPU can be reassigned/cleared between frames when a ROM is
+          // (re)loaded; bail out cleanly instead of crashing on null check.
+          final activeCpu = cpu;
+          if (activeCpu == null) {
+            state = EmulatorState.ready;
+            break;
+          }
+
           // Run cycles until the PPU signals end-of-frame (LY → 144). One
           // iteration of this outer loop is exactly one Game Boy frame
           // (= cyclesPerFrame T-cycles).
-          while (!cpu!.ppu.frameReady) {
-            int cyclesUsed = cpu!.cycle();
+          while (!activeCpu.ppu.frameReady) {
+            int cyclesUsed = activeCpu.cycle();
             cycles += cyclesUsed;
             totalCyclesThisSecond += cyclesUsed;
           }
-          cpu!.flushPendingUpdates();
-          cpu!.ppu.resetFrameReady();
+          activeCpu.flushPendingUpdates();
+          activeCpu.ppu.resetFrameReady();
 
           frameCounter++;
           if (perfStopwatch.elapsedMilliseconds >= 1000) {
@@ -255,7 +263,7 @@ class Emulator {
           // exactly 44100 Hz, so backing off when the queue is full
           // automatically locks emulation to real time without drift.
           int audioQueued = -1;
-          if (cpu!.apu.isInitialized && !kIsWeb) {
+          if (activeCpu.apu.isInitialized && !kIsWeb) {
             try {
               audioQueued = getQueuedAudioSize();
             } catch (_) {

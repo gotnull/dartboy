@@ -117,21 +117,65 @@ class Channel3 {
     if (frequencyTimer <= 0) frequencyTimer = 2;
   }
 
-  // Update method called every CPU cycle - optimized for performance
-  // Update method - Channel 3 frequency timer
+  /// Time-weighted-output accumulator (see Channel1 for the why).
+  double _outAcc = 0.0;
+  int _cycAcc = 0;
+
+  // Frequency timer; splits each tick into segments at every wave-position
+  // change so we can average the output over the audio sample period.
   void tick(int cycles) {
-    if (!enabled) return;
-
-    frequencyTimer -= cycles;
-    while (frequencyTimer <= 0) {
-      // Reload with correct Channel 3 period: 2 * (2048 - frequency)
-      int period = 2 * (2048 - frequency);
-      if (period <= 0) period = 2;
-      frequencyTimer += period;
-
-      // Advance sample index and read new sample
-      advanceSampleIndex();
+    if (!enabled) {
+      _cycAcc += cycles;
+      return;
     }
+
+    while (cycles > 0) {
+      final int instOut = _instantaneousOutput();
+
+      int segment = frequencyTimer;
+      if (segment <= 0) segment = 1;
+      if (segment > cycles) segment = cycles;
+
+      _outAcc += instOut * segment;
+      _cycAcc += segment;
+
+      cycles -= segment;
+      frequencyTimer -= segment;
+
+      if (frequencyTimer <= 0) {
+        int period = 2 * (2048 - frequency);
+        if (period <= 0) period = 2;
+        frequencyTimer += period;
+        advanceSampleIndex();
+      }
+    }
+  }
+
+  int _instantaneousOutput() {
+    switch (volumeShift) {
+      case 0:
+        return 0;
+      case 1:
+        return currentSample;
+      case 2:
+        return currentSample >> 1;
+      case 3:
+        return currentSample >> 2;
+      default:
+        return 0;
+    }
+  }
+
+  double getAveragedOutput() {
+    if (!enabled || !dacEnabled || _cycAcc <= 0) {
+      _outAcc = 0;
+      _cycAcc = 0;
+      return 0.0;
+    }
+    final double avg = _outAcc / _cycAcc;
+    _outAcc = 0;
+    _cycAcc = 0;
+    return avg;
   }
 
   // Advance sample index - 0-based (0-31)

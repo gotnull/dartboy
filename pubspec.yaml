@@ -66,9 +66,27 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # To add assets to your application, add an assets section, like this:
+  # To add assets to your application, add an assets section, like this.
+  # Note: Flutter does not recurse into subdirectories of an asset directory,
+  # so every subdirectory containing a ROM has to be listed explicitly.
   assets:
     - assets/roms/
+    - assets/roms/blargg/
+    - assets/roms/gb-test-roms/
+    - assets/roms/gb-test-roms/cgb_sound/
+    - assets/roms/gb-test-roms/cgb_sound/rom_singles/
+    - assets/roms/gb-test-roms/cpu_instrs/
+    - assets/roms/gb-test-roms/cpu_instrs/individual/
+    - assets/roms/gb-test-roms/dmg_sound/
+    - assets/roms/gb-test-roms/dmg_sound/rom_singles/
+    - assets/roms/gb-test-roms/instr_timing/
+    - assets/roms/gb-test-roms/interrupt_time/
+    - assets/roms/gb-test-roms/mem_timing/
+    - assets/roms/gb-test-roms/mem_timing/individual/
+    - assets/roms/gb-test-roms/mem_timing-2/
+    - assets/roms/gb-test-roms/mem_timing-2/rom_singles/
+    - assets/roms/gb-test-roms/oam_bug/
+    - assets/roms/gb-test-roms/oam_bug/rom_singles/
     - assets/rom_manifest.json
     - assets/instructions/opcodes.json
 
