@@ -61,60 +61,45 @@ class Channel4 {
   int readNR44() =>
       (nr44 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
   void writeNR44(int value) {
-    bool lengthEnable = (value & 0x40) != 0;
+    bool newLengthEnable = (value & 0x40) != 0;
+    bool triggering = (value & 0x80) != 0;
     nr44 = value;
 
-    // KameBoyColor obscure behavior: Length counter extra clocking
-    bool nextStepDoesntUpdate = (frameSequencer & 1) == 0;
-    if (nextStepDoesntUpdate) {
-      if (lengthEnable && !lengthEnabled && lengthCounter > 0) {
-        lengthCounter--;
-        if (lengthCounter == 0) {
-          enabled = false;
-        }
+    bool nextStepDoesntClockLength = (frameSequencer & 1) == 0;
+    if (nextStepDoesntClockLength &&
+        newLengthEnable &&
+        !lengthEnabled &&
+        lengthCounter > 0) {
+      lengthCounter--;
+      if (lengthCounter == 0 && !triggering) {
+        enabled = false;
       }
     }
 
-    // More obscure behavior from KameBoyColor
-    if ((value & 0x80) != 0 && lengthEnabled && lengthCounter == 64) {
-      lengthCounter--;
-    }
+    lengthEnabled = newLengthEnable;
 
-    // Blargg test 2 behavior
-    if ((value & 0x80) != 0 && lengthCounter == 0) {
-      lengthCounter = 64;
-    }
-
-    lengthEnabled = lengthEnable;
-
-    if ((nr44 & 0x80) != 0) {
+    if (triggering) {
       trigger();
     }
   }
 
-  // Trigger the channel (on write to NR44 with bit 7 set)
+  // Trigger the channel. Reload of timers/length happens regardless of DAC;
+  // only the channel-enabled flag depends on the DAC.
   void trigger() {
-    enabled = dacEnabled;
-    if (enabled) {
-      // KameBoyColor Channel 4 trigger (line 725)
-      frequencyTimer = 0; // Start at 0 like KameBoyColor
-      envelopeTimer = envelopePeriod;
-      volume = (nr42 >> 4) & 0x0F;
-      lfsr = 0x7FFF; // Reset LFSR to all ones
+    frequencyTimer = getFrequencyTimerPeriod();
+    envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
+    volume = (nr42 >> 4) & 0x0F;
+    lfsr = 0x7FFF;
 
-      // Length counter reloading
-      if (lengthCounter == 0) {
-        lengthCounter = 64;
-        // Extra clocking if length enabled during even steps (next step doesn't update)
-        bool nextStepDoesntUpdate = (frameSequencer & 1) == 0;
-        if (lengthEnabled && nextStepDoesntUpdate) {
-          lengthCounter--;
-          if (lengthCounter == 0) {
-            enabled = false;
-          }
-        }
+    if (lengthCounter == 0) {
+      lengthCounter = 64;
+      bool nextStepDoesntClockLength = (frameSequencer & 1) == 0;
+      if (lengthEnabled && nextStepDoesntClockLength) {
+        lengthCounter = 63;
       }
     }
+
+    enabled = dacEnabled;
   }
 
   // Calculate the frequency timer period based on NR43

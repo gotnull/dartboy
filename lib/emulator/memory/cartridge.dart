@@ -67,10 +67,25 @@ class Cartridge {
   // CGB Flag (0x143)
   int get cartCgbFlag => title[0x143 - 0x134];
 
-  /// Load cartridge byte data
-  void load(List<int> data) {
-    size = (data.length / 1024).round();
-    this.data = data;
+  /// Load cartridge byte data.
+  ///
+  /// Pads under-sized data up to the minimum Game Boy cartridge size (32 KB)
+  /// with `0xFF`. Real ROM files are always at least 32 KB, but assets may
+  /// occasionally be loaded incorrectly (e.g. a `.sav` slipped into the asset
+  /// list). Padding lets readByte() safely index the static ROM area without
+  /// crashing the emulator on a malformed file.
+  void load(List<int> rawData) {
+    const int minRomSize = 0x8000; // 32 KB — smallest legal Game Boy ROM
+    List<int> padded = rawData;
+    if (rawData.length < minRomSize) {
+      print(
+          'Warning: ROM data is only ${rawData.length} bytes; padding to '
+          '$minRomSize with 0xFF. The file is probably not a valid ROM.');
+      padded = Uint8List(minRomSize)..fillRange(0, minRomSize, 0xFF);
+      padded.setRange(0, rawData.length, rawData);
+    }
+    size = (padded.length / 1024).round();
+    data = padded;
 
     type = readByte(0x147);
     name = String.fromCharCodes(readBytes(0x134, 0x142));

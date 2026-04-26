@@ -179,6 +179,14 @@ class APU {
   // DIV-APU tracking for hardware-accurate frame sequencer
   int lastDivAPU = 0;
 
+  // Most recent doubleSpeed flag from _tick — used by writeNR52 power-on
+  // to read the correct DIV-APU bit (bit 4 normal speed, bit 5 double speed).
+  bool _doubleSpeed = false;
+
+  // SameBoy quirk: when turning the APU on while the DIV-APU bit is high,
+  // the first DIV/APU event after power-on is skipped.
+  bool _skipNextDivApu = false;
+
   // KameBoyColor m_cycles mechanism for proper channel timing
   int mCycles = 0;
   int audioCycles = 0;
@@ -196,6 +204,18 @@ class APU {
   int nr50 = 0;
   int nr51 = 0;
   int nr52 = 0x80; // Sound on by default
+
+  void _syncFrameSequencerStateToChannels() {
+    channel1.setFrameSequencer(frameSequencer);
+    channel2.setFrameSequencer(frameSequencer);
+    channel3.setFrameSequencer(frameSequencer);
+    channel4.setFrameSequencer(frameSequencer);
+
+    channel1.setFrameSequencerCycles(frameSequencerCycles);
+    channel2.setFrameSequencerCycles(frameSequencerCycles);
+    channel3.setFrameSequencerCycles(frameSequencerCycles);
+    channel4.setFrameSequencerCycles(frameSequencerCycles);
+  }
 
   // Mobile audio system
   MobileAudio? _mobileAudio;
@@ -291,27 +311,9 @@ class APU {
         return (nr52 & 0x80) |
             0x70 |
             channelStatus; // Bit 7 = power, bits 4-6 = 1, bits 0-3 = channel status
-      case 0x15: // Unused register between NR14 and NR21
-        return 0xFF;
-      case 0x1F: // Unused register between NR34 and NR41
-        return 0xFF;
-      // Unused registers between NR52 and Wave RAM
-      case 0x27:
-      case 0x28:
-      case 0x29:
-      case 0x2A:
-      case 0x2B:
-      case 0x2C:
-      case 0x2D:
-      case 0x2E:
-      case 0x2F:
-        return 0xFF;
       default:
-        // Only print unknown register messages for addresses that should be audio registers
-        if (address >= 0x10 && address <= 0x3F) {
-          print("Unknown audio register read: 0x${address.toRadixString(16)}");
-        }
-        return 0xFF; // Return 0xFF for unmapped addresses
+        // Unused audio registers ($15, $1F, $27-$2F) all read as 0xFF.
+        return 0xFF;
     }
   }
 
@@ -337,20 +339,23 @@ class APU {
           // Reset frame sequencer when APU is powered off
           frameSequencer = 0;
           frameSequencerCycles = 0;
+          _syncFrameSequencerStateToChannels();
         }
         nr52 = 0; // Clear NR52 except the always-on bits (set below)
       } else {
         // Power on: retain the always-on bits (4-6) in NR52
         nr52 = (value & 0x80) | 0x70; // Bits 4-6 are always 1
 
-        // CGB behavior: Length counters are NOT reset when APU is powered on
-        // This is different from DMG behavior
-        // Keep existing length counter values
-
-        // Critical: KameBoyColor sets frame_sequencer = 7 ONLY on transition from off to on
-        // This timing is required for test 07 to pass
         if (!wasOn) {
           frameSequencer = 7; // next step is 0
+          _syncFrameSequencerStateToChannels();
+
+          // SameBoy quirk: if the DIV-APU bit is currently high at the moment
+          // of power-on, the first DIV/APU falling edge is skipped. This shifts
+          // the time-to-first-clock by one full DIV/APU period (≈ 8192 cycles)
+          // depending on the DIV alignment. Required by test 07 sub-test 5.
+          int divBit = _doubleSpeed ? 0x20 : 0x10;
+          _skipNextDivApu = (lastDivAPU & divBit) != 0;
         }
       }
       return;
@@ -430,16 +435,9 @@ class APU {
       case MemoryRegisters.nr52:
         // NR52 is handled at the top of writeNR - this case should not be reached
         break;
-      case 0x15: // Unused register between NR14 and NR20 - ignore writes
-        break;
-      case 0x1F: // Unused register between NR24 and NR30 - ignore writes
-        break;
       default:
-        // Only print unknown register messages for addresses that should be audio registers
-        if (address >= 0x10 && address <= 0x3F) {
-          print(
-              "Unknown audio register write: 0x${address.toRadixString(16)} = $value");
-        }
+        // Unused audio registers ($15, $1F, $27-$2F): writes ignored.
+        break;
     }
   }
 
@@ -477,15 +475,24 @@ class APU {
   }
 
   void _tick(int cycles, int divRegister, bool doubleSpeed) {
+    _doubleSpeed = doubleSpeed;
+
     // Frame sequencer is clocked by a falling edge on a bit of the DIV register.
     // Bit 4 in normal speed, bit 5 in double speed.
-    // CRITICAL: This must happen BEFORE checking APU power state (KameBoyColor line 927-958)
+    // This must happen regardless of APU power state, so the divider bit
+    // tracking stays consistent across power-off/on transitions.
     int divBit = doubleSpeed ? 0x20 : 0x10;
     bool fell = (lastDivAPU & divBit) != 0 && (divRegister & divBit) == 0;
     lastDivAPU = divRegister;
 
     if (fell) {
-      updateFrameSequencer();
+      // SameBoy quirk: when the APU is powered on while the DIV-APU bit was
+      // already high, the first falling edge after power-on is skipped.
+      if (_skipNextDivApu) {
+        _skipNextDivApu = false;
+      } else {
+        updateFrameSequencer();
+      }
     }
 
     // Now check if APU is powered on before processing audio
@@ -527,10 +534,7 @@ class APU {
     frameSequencer = (frameSequencer + 1) % 8;
 
     // Set the frame sequencer value in all channels AFTER incrementing
-    channel1.setFrameSequencer(frameSequencer);
-    channel2.setFrameSequencer(frameSequencer);
-    channel3.setFrameSequencer(frameSequencer);
-    channel4.setFrameSequencer(frameSequencer);
+    _syncFrameSequencerStateToChannels();
 
     // Only perform actual updates if APU is powered on
     if ((nr52 & 0x80) != 0) {
@@ -765,7 +769,7 @@ class APU {
   void reset() {
     channel1.reset();
     channel2.reset();
-    channel3.reset();
+    channel3.reset(clearWaveRam: true);
     channel4.reset();
     nr50 = 0;
     nr51 = 0;
@@ -776,8 +780,11 @@ class APU {
     lastDivAPU = 0;
     mCycles = 0;
     audioCycles = 0;
+    _doubleSpeed = false;
+    _skipNextDivApu = false;
     _leftHighPassState = 0.0;
     _rightHighPassState = 0.0;
+    _syncFrameSequencerStateToChannels();
     updateVolumes();
   }
 }

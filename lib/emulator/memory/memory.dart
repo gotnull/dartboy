@@ -373,11 +373,9 @@ class Memory {
       }
       registers[address] = reg;
     }
-    // Audio Registers (NR10-NR52) and Wave RAM (0xFF30-0xFF3F)
-    else if ((address >= MemoryRegisters.nr10 &&
-            address <= MemoryRegisters.nr52) ||
-        (address >= MemoryRegisters.waveRamStart &&
-            address <= MemoryRegisters.waveRamEnd)) {
+    // Audio Registers (NR10-NR52, unused $27-$2F) and Wave RAM (0xFF30-0xFF3F)
+    else if (address >= MemoryRegisters.nr10 &&
+        address <= MemoryRegisters.waveRamEnd) {
       cpu.apu.writeNR(address, value);
     }
     // OAM DMA transfer
@@ -465,11 +463,9 @@ class Memory {
         return cpu.ppu.getSpritePalette(currentRegister);
       }
     }
-    // Audio registers (NR10-NR52) and Wave RAM (0xFF30-0xFF3F)
-    else if ((address >= MemoryRegisters.nr10 &&
-            address <= MemoryRegisters.nr52) ||
-        (address >= MemoryRegisters.waveRamStart &&
-            address <= MemoryRegisters.waveRamEnd)) {
+    // Audio registers (NR10-NR52, unused $27-$2F) and Wave RAM (0xFF30-0xFF3F)
+    else if (address >= MemoryRegisters.nr10 &&
+        address <= MemoryRegisters.waveRamEnd) {
       return cpu.apu.readNR(address);
     }
 

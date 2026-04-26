@@ -71,71 +71,49 @@ class Channel2 {
   int readNR24() =>
       (nr24 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
   void writeNR24(int value) {
-    bool lengthEnable = (value & 0x40) != 0;
+    bool newLengthEnable = (value & 0x40) != 0;
+    bool triggering = (value & 0x80) != 0;
     nr24 = value;
 
     frequency = (nr24 & 0x07) << 8 | nr23;
     updateFrequencyTimer();
 
-    // KameBoyColor obscure behavior: Length counter extra clocking
-    bool nextStepDoesntUpdate = (frameSequencer & 1) == 0;
-    if (nextStepDoesntUpdate) {
-      if (lengthEnable && !lengthEnabled && lengthCounter > 0) {
-        lengthCounter--;
-        if (lengthCounter == 0) {
-          enabled = false;
-        }
+    bool nextStepDoesntClockLength = (frameSequencer & 1) == 0;
+    if (nextStepDoesntClockLength &&
+        newLengthEnable &&
+        !lengthEnabled &&
+        lengthCounter > 0) {
+      lengthCounter--;
+      if (lengthCounter == 0 && !triggering) {
+        enabled = false;
       }
     }
 
-    // More obscure behavior from KameBoyColor
-    if ((value & 0x80) != 0 && lengthEnabled && lengthCounter == 64) {
-      lengthCounter--;
-    }
+    lengthEnabled = newLengthEnable;
 
-    // Blargg test 2 behavior
-    if ((value & 0x80) != 0 && lengthCounter == 0) {
-      lengthCounter = 64;
-    }
-
-    lengthEnabled = lengthEnable;
-
-    if ((nr24 & 0x80) != 0) {
+    if (triggering) {
       trigger();
     }
   }
 
-  // Trigger the channel (on write to NR24 with bit 7 set)
-  // Trigger the channel (on write to NR24 with bit 7 set)
-  // Pan Docs: "Triggering a sound restarts it from the beginning"
+  // Trigger the channel. Reload of timers/length happens regardless of DAC;
+  // only the channel-enabled flag depends on the DAC.
   void trigger() {
-    // Channel is enabled only if DAC is enabled
-    enabled = dacEnabled;
+    frequencyTimer = 4 * (2048 - frequency);
+    dutyStep = 0;
 
-    if (enabled) {
-      // Reset frequency timer - back to working formula
-      frequencyTimer = 4 * (2048 - frequency);
+    envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
+    volume = (nr22 >> 4) & 0x0F;
 
-      // KameBoyColor: waveform_idx starts at 0
-      dutyStep = 0;
-
-      // Reset envelope - KameBoyColor behavior
-      envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
-      volume = (nr22 >> 4) & 0x0F; // Initial volume from NR22 bits 4-7
-
-      // Length counter handling
-      if (lengthCounter == 0) {
-        lengthCounter = 64; // Full length
-        // Extra clocking if length enabled during even steps (next step doesn't update)
-        bool nextStepDoesntUpdate = (frameSequencer & 1) == 0;
-        if (lengthEnabled && nextStepDoesntUpdate) {
-          lengthCounter--;
-          if (lengthCounter == 0) {
-            enabled = false;
-          }
-        }
+    if (lengthCounter == 0) {
+      lengthCounter = 64;
+      bool nextStepDoesntClockLength = (frameSequencer & 1) == 0;
+      if (lengthEnabled && nextStepDoesntClockLength) {
+        lengthCounter = 63;
       }
     }
+
+    enabled = dacEnabled;
   }
 
   // Update frequency timer - back to working formula

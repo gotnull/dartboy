@@ -57,23 +57,15 @@ class Channel1 {
     sweepNegate = (nr10 & 0x08) != 0;
     sweepShift = nr10 & 0x07;
 
-    // Obscure behavior: Clearing negate mode after it was used disables channel
+    // Pan Docs: clearing the sweep negate bit after at least one sweep
+    // calculation has been made in negate mode since the last trigger
+    // immediately disables the channel.
     if (sweepNegateModeUsed && oldSweepNegate && !sweepNegate) {
       enabled = false;
     }
-
-    // Update sweep enable based on Pan Docs: enabled if period OR shift non-zero
-    // But also consider current sweep state for runtime changes
-    if (sweepPeriod == 0 && sweepShift == 0) {
-      sweepEnabled = false;
-    } else {
-      // Re-enable sweep if either period or shift becomes non-zero
-      sweepEnabled = true;
-      // If we just enabled a non-zero period, restart the sweep timer
-      if (sweepPeriod > 0) {
-        sweepTimer = sweepPeriod;
-      }
-    }
+    // sweepEnabled is set on trigger only, not on NR10 writes. The internal
+    // sweep timer keeps running across NR10 writes; it only reloads when it
+    // reaches zero.
   }
 
   // NR11: Sound Length / Waveform Duty
@@ -111,91 +103,72 @@ class Channel1 {
   int readNR14() =>
       (nr14 & 0x40) | 0xBF; // Only bit 6 readable, others read as 1
   void writeNR14(int value) {
-    bool lengthEnable = (value & 0x40) != 0;
+    bool newLengthEnable = (value & 0x40) != 0;
+    bool triggering = (value & 0x80) != 0;
     nr14 = value;
 
     frequency = (nr14 & 0x07) << 8 | nr13;
     updateFrequencyTimer();
 
-    // CGB obscure behavior: Length counter extra clocking
-    // KameBoyColor: next_step_doesnt_update = (frame_sequencer & 1) == 0
-    // This means even steps (0,2,4,6) are the ones that DON'T update yet
-    // So we clock on even steps when enabling length
-    bool nextStepDoesntUpdate = (frameSequencer & 1) == 0;
-    if (nextStepDoesntUpdate &&
-        lengthEnable &&
+    // Pan Docs extra-length-clock quirk: writing NRx4 with length transitioning
+    // from disabled→enabled, on a frame-sequencer step whose next step does
+    // NOT clock the length counter (i.e. the current step is even: 0,2,4,6),
+    // and length > 0, decrements length. If this hits zero with no trigger,
+    // the channel is disabled.
+    bool nextStepDoesntClockLength = (frameSequencer & 1) == 0;
+    if (nextStepDoesntClockLength &&
+        newLengthEnable &&
         !lengthEnabled &&
         lengthCounter > 0) {
       lengthCounter--;
-      if (lengthCounter == 0) {
+      if (lengthCounter == 0 && !triggering) {
         enabled = false;
       }
     }
 
-    // CGB behavior: If triggering with length enabled and length at max, decrement it
-    if ((value & 0x80) != 0 && lengthEnabled && lengthCounter == 64) {
-      lengthCounter = 63; // Set to 63, not 64-1
-    }
+    lengthEnabled = newLengthEnable;
 
-    // If triggering with length 0, reload to maximum
-    if ((value & 0x80) != 0 && lengthCounter == 0) {
-      lengthCounter = 64;
-      // Extra clocking if we're about to clock length in the next step (even steps)
-      if (lengthEnabled && nextStepDoesntUpdate) {
-        lengthCounter = 63;
-      }
-    }
-
-    lengthEnabled = lengthEnable;
-
-    if ((nr14 & 0x80) != 0) {
+    if (triggering) {
       trigger();
     }
   }
 
-  // Trigger the channel (on write to NR14 with bit 7 set)
-  // Pan Docs: "Triggering a sound restarts it from the beginning"
+  // Trigger the channel (on write to NR14 with bit 7 set).
+  // All trigger side-effects (timer reload, length reload, sweep init) occur
+  // even if the DAC is off; only the channel-enabled flag depends on the DAC.
   void trigger() {
-    // Channel is enabled only if DAC is enabled
+    // Reset frequency timer.
+    frequencyTimer = 4 * (2048 - frequency);
+    dutyStep = 0;
+
+    // Reload envelope timer (period 0 treated as 8) and volume from NR12.
+    envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
+    volume = (nr12 >> 4) & 0x0F;
+
+    // Length reload if zero, with the trigger-on-doesn't-clock-step quirk.
+    if (lengthCounter == 0) {
+      lengthCounter = 64;
+      bool nextStepDoesntClockLength = (frameSequencer & 1) == 0;
+      if (lengthEnabled && nextStepDoesntClockLength) {
+        lengthCounter = 63;
+      }
+    }
+
+    // Sweep initialization.
+    shadowFrequency = frequency;
+    sweepTimer = sweepPeriod == 0 ? 8 : sweepPeriod;
+    sweepEnabled = (sweepPeriod != 0) || (sweepShift != 0);
+    sweepNegateModeUsed = false;
+
+    // Channel becomes enabled iff DAC is on.
     enabled = dacEnabled;
 
-    if (enabled) {
-      // Reset frequency timer - back to working formula
-      frequencyTimer = 4 * (2048 - frequency);
-
-      // KameBoyColor: waveform_idx starts at 0
-      dutyStep = 0;
-
-      // Reset envelope - KameBoyColor behavior
-      envelopeTimer = envelopePeriod == 0 ? 8 : envelopePeriod;
-      volume = (nr12 >> 4) & 0x0F; // Initial volume from NR12 bits 4-7
-
-      // Length counter handling
-      if (lengthCounter == 0) {
-        lengthCounter = 64; // Full length
-        // Extra clocking if length enabled during even steps (next step doesn't update)
-        bool nextStepDoesntUpdate = (frameSequencer & 1) == 0;
-        if (lengthEnabled && nextStepDoesntUpdate) {
-          lengthCounter--;
-          if (lengthCounter == 0) {
-            enabled = false;
-          }
-        }
-      }
-
-      // Sweep initialization - KameBoyColor behavior
-      shadowFrequency = frequency;
-      sweepTimer = sweepPeriod == 0 ? 8 : sweepPeriod;
-      sweepEnabled = (sweepPeriod != 0) || (sweepShift != 0);
-      sweepNegateModeUsed = false;
-
-      // Per Pan Docs: "If the shift amount is non-zero, frequency calculation
-      // and overflow check are performed immediately"
-      if (sweepShift != 0) {
-        int newFreq = calculateSweepFrequency();
-        if (newFreq > 2047) {
-          enabled = false;
-        }
+    // Pan Docs: if shift is non-zero, perform an immediate sweep frequency
+    // calculation and overflow check on trigger.
+    if (sweepShift != 0) {
+      int newFreq = calculateSweepFrequency();
+      if (newFreq > 2047) {
+        enabled = false;
       }
     }
   }
@@ -248,33 +221,39 @@ class Channel1 {
   }
 
   void updateSweep() {
-    if (!sweepEnabled || !enabled) return;
+    if (!enabled) return;
 
     sweepTimer--;
+    if (sweepTimer > 0) return;
 
-    if (sweepTimer <= 0) {
-      if (sweepPeriod == 0) {
-        sweepTimer = 8;
-        return; // Do not perform sweep calculation when period is 0
-      }
+    // Reload timer. Period 0 is treated as 8 by hardware.
+    sweepTimer = sweepPeriod == 0 ? 8 : sweepPeriod;
 
-      sweepTimer = sweepPeriod;
+    // Calculation only runs when the internal enabled flag is set
+    // AND the period (as written in NR10) is non-zero.
+    if (!sweepEnabled || sweepPeriod == 0) return;
 
-      if (sweepShift != 0) {
-        int newFrequency = calculateSweepFrequency();
-        if (newFrequency <= 2047) {
-          shadowFrequency = newFrequency & 0x7FF;
-          frequency = shadowFrequency;
-          updateFrequencyTimer();
+    int newFrequency = calculateSweepFrequency();
 
-          // Second overflow check
-          int overflowCheck = calculateSweepFrequency();
-          if (overflowCheck > 2047) {
-            enabled = false;
-          }
-        } else {
-          enabled = false;
-        }
+    // First overflow check - applies regardless of shift.
+    if (newFrequency > 2047) {
+      enabled = false;
+      return;
+    }
+
+    // Writeback only when shift is non-zero.
+    if (sweepShift != 0) {
+      shadowFrequency = newFrequency & 0x7FF;
+      frequency = shadowFrequency;
+      // Reflect the updated frequency in NR13/NR14 (low 8 bits and low 3 bits).
+      nr13 = frequency & 0xFF;
+      nr14 = (nr14 & 0xF8) | ((frequency >> 8) & 0x07);
+      updateFrequencyTimer();
+
+      // Second overflow check (no writeback).
+      int overflowCheck = calculateSweepFrequency();
+      if (overflowCheck > 2047) {
+        enabled = false;
       }
     }
   }

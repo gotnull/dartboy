@@ -3,6 +3,7 @@
 .dart_tool/
 build/
 assets/rom_manifest.json
+reference/
 .DS_Store
 
 # Roms
