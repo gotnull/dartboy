@@ -169,10 +169,15 @@ class APU {
   final int bufferSize = 1024;
   final int channels = 2;
 
-  int cyclesPerSample;
+  /// Cycle count per audio sample, kept as a separate numerator/denominator
+  /// (clockSpeed / sampleRate) so we can emit samples at exactly the right
+  /// rate even when the ratio isn't an integer (4194304/44100 = 95.106…).
+  /// Each tick adds `cycles * sampleRate` to [_sampleAccumulator]; whenever
+  /// it crosses [_clockSpeedAcc] we emit one sample.
+  int _sampleAccumulator = 0;
+  int _clockSpeedAcc = 4194304;
   static const int cyclesPerFrameSequencer =
       8192; // 4194304 / 512 = exact timing
-  int accumulatedCycles = 0;
   int frameSequencerCycles = 0;
   int frameSequencer = 0;
 
@@ -224,7 +229,7 @@ class APU {
   // Audio performance optimization
   int _audioSampleCounter = 0;
 
-  APU(clockSpeed) : cyclesPerSample = clockSpeed ~/ defaultSampleRate {
+  APU(int clockSpeed) : _clockSpeedAcc = clockSpeed {
     if (_isMobile) {
       _mobileAudio = MobileAudio();
     }
@@ -465,7 +470,7 @@ class APU {
   }
 
   void updateClockSpeed(int newClockSpeed) {
-    cyclesPerSample = newClockSpeed ~/ defaultSampleRate;
+    _clockSpeedAcc = newClockSpeed;
     // cyclesPerFrameSequencer remains at 8192, as per Game Boy hardware
   }
 
@@ -498,18 +503,21 @@ class APU {
     // Now check if APU is powered on before processing audio
     if (!isInitialized || (nr52 & 0x80) == 0) return;
 
-    accumulatedCycles += cycles;
-
     // Update each channel only if APU is powered on
     channel1.tick(cycles);
     channel2.tick(cycles);
     channel3.tick(cycles);
     channel4.tick(cycles);
 
-    // Generate audio samples at exact intervals
-    while (accumulatedCycles >= cyclesPerSample) {
+    // Emit audio samples at the exact host sample rate. Using a rational
+    // accumulator (sampleRate / clockSpeed) avoids the off-by-0.1% drift
+    // you'd get from `cycles ~/ sampleRate`-style integer division — over
+    // a full second of play that drift is otherwise audible as a slow
+    // pitch-flutter.
+    _sampleAccumulator += cycles * defaultSampleRate;
+    while (_sampleAccumulator >= _clockSpeedAcc) {
+      _sampleAccumulator -= _clockSpeedAcc;
       mixAndQueueAudioSample();
-      accumulatedCycles -= cyclesPerSample;
     }
   }
 
@@ -636,6 +644,31 @@ class APU {
   double _lastLeftSample = 0.0;
   double _lastRightSample = 0.0;
 
+  // Per-channel DAC envelope (0.0 = fully off, 1.0 = fully on).
+  // Real Game Boy DACs have a slow RC charge curve when toggled. The
+  // *digital* value passes through instantly inside the enabled DAC; only
+  // the enable/disable transition itself has the slow ramp. So we keep the
+  // envelope as a separate factor and multiply it onto the (instantaneous)
+  // digital→analog mapping. Without this multiplier, every DAC toggle
+  // produces a sharp 0 → ±1.0 step that's audible as a click.
+  double _ch1DacEnv = 0.0;
+  double _ch2DacEnv = 0.0;
+  double _ch3DacEnv = 0.0;
+  double _ch4DacEnv = 0.0;
+
+  /// Per-sample glide for the DAC enable envelope. At 44.1 kHz, 1/4096 per
+  /// sample gives a ~93 ms full-scale ramp — fast enough that retriggering
+  /// an envelope-zero channel still feels immediate, slow enough that the
+  /// transient is below the click threshold.
+  static const double _dacGlide = 1.0 / 4096.0;
+
+  double _stepDacEnv(double current, double target) {
+    final delta = target - current;
+    if (delta > _dacGlide) return current + _dacGlide;
+    if (delta < -_dacGlide) return current - _dacGlide;
+    return target;
+  }
+
   // Update NR52 channel status bits based on channel enabled states
   void updateNR52ChannelStatus() {
     int channelStatus = (nr52 & 0x80); // Keep APU enabled bit
@@ -662,13 +695,21 @@ class APU {
     //   print('APU: CH1=$ch1Digital CH2=$ch2Digital CH3=$ch3Digital CH4=$ch4Digital NR51=${nr51.toRadixString(16)} NR50=${nr50.toRadixString(16)}');
     // }
 
-    // Convert digital values through DACs (0-15) -> (-1.0 to +1.0)
-    // Pan Docs: "Digital 0 maps to analog 1, digital 15 maps to analog -1" (negative slope)
-    // When DAC is disabled, output is 0.0 (no signal). When DAC is on but channel off, DAC(0) = +1.0.
-    double ch1Analog = channel1.dacEnabled ? (1.0 - (ch1Digital / 7.5)) : 0.0;
-    double ch2Analog = channel2.dacEnabled ? (1.0 - (ch2Digital / 7.5)) : 0.0;
-    double ch3Analog = channel3.dacEnabled ? (1.0 - (ch3Digital / 7.5)) : 0.0;
-    double ch4Analog = channel4.dacEnabled ? (1.0 - (ch4Digital / 7.5)) : 0.0;
+    // Convert digital values through DACs (0-15) -> (-1.0 to +1.0).
+    // Pan Docs: "Digital 0 maps to analog 1, digital 15 maps to analog -1"
+    // (negative slope). The digital→analog mapping itself is instantaneous,
+    // so envelope changes and waveform transitions still sound crisp; the
+    // only smoothing is on the DAC enable/disable transition, which on
+    // real hardware is a slow RC charge. We keep that as a separate
+    // 0..1 envelope and multiply it onto the instantaneous analog value.
+    _ch1DacEnv = _stepDacEnv(_ch1DacEnv, channel1.dacEnabled ? 1.0 : 0.0);
+    _ch2DacEnv = _stepDacEnv(_ch2DacEnv, channel2.dacEnabled ? 1.0 : 0.0);
+    _ch3DacEnv = _stepDacEnv(_ch3DacEnv, channel3.dacEnabled ? 1.0 : 0.0);
+    _ch4DacEnv = _stepDacEnv(_ch4DacEnv, channel4.dacEnabled ? 1.0 : 0.0);
+    final double ch1Analog = (1.0 - (ch1Digital / 7.5)) * _ch1DacEnv;
+    final double ch2Analog = (1.0 - (ch2Digital / 7.5)) * _ch2DacEnv;
+    final double ch3Analog = (1.0 - (ch3Digital / 7.5)) * _ch3DacEnv;
+    final double ch4Analog = (1.0 - (ch4Digital / 7.5)) * _ch4DacEnv;
 
     // Mix channels according to NR51 panning
     double left = 0.0;
@@ -712,23 +753,31 @@ class APU {
     return [leftSample, rightSample];
   }
 
-  // Pre-allocated buffer for audio samples to avoid malloc/free overhead
-  static final Uint8List _audioBuffer = Uint8List(4);
+  /// Number of stereo samples buffered before flushing to native SDL.
+  ///
+  /// One FFI hop per emulator-generated sample (= 44100/s) burns enough Dart
+  /// runtime overhead to cause noticeable jitter and roughness in the audio.
+  /// 256 stereo samples = ~5.8 ms of audio at 44.1 kHz, which is well below
+  /// any human-perceptible latency floor and amortises the FFI cost ~256×.
+  static const int _audioBatchSamples = 256;
+  static const int _audioBatchBytes = _audioBatchSamples * 4;
+  static final Uint8List _audioBuffer = Uint8List(_audioBatchBytes);
   static final ByteData _audioByteData = _audioBuffer.buffer.asByteData();
   static Pointer<Uint8>? _audioBufferPtr;
+  static int _audioBatchPos = 0;
 
   void queueAudioSample(int leftSample, int rightSample) {
-    _audioBufferPtr ??= malloc.allocate<Uint8>(4);
+    _audioBufferPtr ??= malloc.allocate<Uint8>(_audioBatchBytes);
 
-    _audioByteData.setInt16(0, leftSample, Endian.little);
-    _audioByteData.setInt16(2, rightSample, Endian.little);
+    _audioByteData.setInt16(_audioBatchPos, leftSample, Endian.little);
+    _audioByteData.setInt16(_audioBatchPos + 2, rightSample, Endian.little);
+    _audioBatchPos += 4;
 
-    _audioBufferPtr!.asTypedList(4).setAll(0, _audioBuffer);
-
-    // Hand off to native SDL stream — the native layer drops samples on
-    // overflow. The emulator run loop paces itself against the queue depth,
-    // so we should rarely actually hit that ceiling.
-    streamAudio(_audioBufferPtr!, 4);
+    if (_audioBatchPos >= _audioBatchBytes) {
+      _audioBufferPtr!.asTypedList(_audioBatchBytes).setAll(0, _audioBuffer);
+      streamAudio(_audioBufferPtr!, _audioBatchBytes);
+      _audioBatchPos = 0;
+    }
   }
 
   Future<void> stopAudio() async {
@@ -758,7 +807,7 @@ class APU {
     nr50 = 0;
     nr51 = 0;
     nr52 = 0x80;
-    accumulatedCycles = 0;
+    _sampleAccumulator = 0;
     frameSequencerCycles = 0;
     frameSequencer = 0;
     lastDivAPU = 0;
